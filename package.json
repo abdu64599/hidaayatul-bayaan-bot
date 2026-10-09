@@ -1,0 +1,18 @@
+{
+"name": "hidaayatul-bayaan-bot",
+"version": "1.0.0",
+"description": "Hidaayatul-Bayaan Islamic Education and Examination WhatsApp Bot",
+"main": "server.js",
+"scripts": {
+"start": "node server.js"
+},
+"engines": {
+"node": ">=20"
+},
+"dependencies": {
+"@whiskeysockets/baileys": "latest",
+"express": "latest",
+"pg": "latest",
+"qrcode": "latest"
+}
+}
