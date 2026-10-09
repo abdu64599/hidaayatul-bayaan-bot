@@ -415,7 +415,6 @@ Bu'aa biraa ilaaluuf 6 ergi.`
     await sendText(jid, "Rakkoon uumameera. Mee yeroo muraasa booda irra deebi'i.");
   }
 }
-
 async function startWhatsApp() {
   if (starting) return;
   starting = true;
@@ -432,12 +431,12 @@ async function startWhatsApp() {
       const latest = await fetchLatestBaileysVersion();
       version = latest.version;
     } catch (error) {
-      console.log("WhatsApp version duraanii fayyadama.");
+      console.log("WhatsApp version argachuu hin dandeenye; version duraanii fayyadama.");
     }
 
     sock = makeWASocket({
       auth: state,
-      version,
+      ...(version ? { version } : {}),
       logger: P({ level: "silent" }),
       printQRInTerminal: false,
       browser: ["Hidaayatul-Bayaan", "Chrome", "1.0.0"],
@@ -447,13 +446,17 @@ async function startWhatsApp() {
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", async update => {
+    sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        latestQR = await QRCode.toDataURL(qr);
-        connected = false;
-        console.log("QR Code haaraa qophaa'e.");
+        try {
+          latestQR = await QRCode.toDataURL(qr);
+          connected = false;
+          console.log("QR Code qophaa'e.");
+        } catch (error) {
+          console.error("QR ERROR:", error.message);
+        }
       }
 
       if (connection === "open") {
@@ -464,20 +467,56 @@ async function startWhatsApp() {
 
       if (connection === "close") {
         connected = false;
-        const status = lastDisconnect?.error?.output?.statusCode;
+        latestQR = null;
+        starting = false;
 
-        if (status !== DisconnectReason.loggedOut) {
-          console.log("WhatsApp irra deebi'ee wal qunnama...");
-          setTimeout(() => {
-            starting = false;
-            startWhatsApp().catch(console.error);
-          }, 5000);
-        } else {
-          console.log("WhatsApp logout ta'e. Session deebisanii wal qunnamsiisuu barbaachisa.");
-          latestQR = null;
+        const status =
+          lastDisconnect?.error?.output?.statusCode;
+
+        if (status === DisconnectReason.loggedOut) {
+          console.log(
+            "WhatsApp logout ta'e. Session haaraa scan gochuun barbaachisa."
+          );
+          return;
+        }
+
+        console.log(
+          "WhatsApp irraa citeera; sekondii 5 booda irra deebi'ee yaala."
+        );
+
+        setTimeout(() => {
+          startWhatsApp().catch((error) => {
+            console.error("RECONNECT ERROR:", error);
+          });
+        }, 5000);
+      }
+    });
+
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+      if (type !== "notify") return;
+
+      for (const msg of messages) {
+        try {
+          await handleMessage(msg);
+        } catch (error) {
+          console.error("MESSAGE HANDLER ERROR:", error);
         }
       }
     });
+
+  } catch (error) {
+    console.error("WHATSAPP START ERROR:", error);
+    connected = false;
+    latestQR = null;
+    starting = false;
+
+    setTimeout(() => {
+      startWhatsApp().catch((err) => {
+        console.error("WHATSAPP RETRY ERROR:", err);
+      });
+    }, 10000);
+  }
+      }
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
       if (type !== "notify") return;
