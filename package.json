@@ -1,7 +1,7 @@
 {
   "name": "hidaayatul-bayaan",
   "version": "1.0.0",
-  "description": "Hidaayatul-Bayaan WhatsApp Seenaa Nabiyyii Muhammad fi Sahabootaa",
+  "description": "Hidaayatul-Bayaan WhatsApp Bot - Seenaa Nabiyyii fi Sahabootaa",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,6 +12,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.18",
     "express": "^4.21.2",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4"
   }
 }
