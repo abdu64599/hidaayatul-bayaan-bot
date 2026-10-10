@@ -1,656 +1,358 @@
 const express = require("express");
-const makeWASocket = require("@whiskeysockets/baileys").default;
 const {
+  default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
-const path = require("path");
+const QRCode = require("qrcode");
 const fs = require("fs");
+const path = require("path");
 
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const AUTH_DIR =
-  process.env.AUTH_DIR || "/tmp/hidaayatul-bayaan-auth";
+  process.env.AUTH_DIR || path.join("/tmp", "hidaayatul-bayaan-auth");
 
-let sock;
+let sock = null;
+let currentQR = null;
 let isWhatsAppConnected = false;
+let isStarting = false;
 
 const sessions = new Map();
 
-// ==========================================
-// SEENAA NABIYYII MUHAMMAD (SAW)
-// ==========================================
+/* =========================
+   SEENAA NABIYYII MUHAMMAD ﷺ
+========================= */
 
 const SEENAA_NABIYYII = [
   {
-    maqaa: "1. Dhaloota Nabiyyii Muhammad (SAW)",
-    seenaa: `Nabiyyiin Muhammad (SAW) Makkaa keessatti, bara Filaa jedhamuun beekamu keessatti dhalatan. Abbaan isaanii Abdullaah, haati isaanii Aaminaa jedhamu.
-
-Abbaan isaanii osoo isaan hin dhalatin du'an. Nabiyyiin (SAW) ijoollummaa isaanii keessatti rakkina hedduu keessa darbaniiru.
-
-Jalqaba Haalimaa Sa'diyyaa bira guddatani. Sana booda haadha isaanii waliin jiraatan. Haati isaanii yeroo isaan ijoollee ta'an duute; akkasumas akaakayyuu isaanii Abd al-Muxxalib, achiis abbeeraan isaanii Abu Xaalib isaan kunuunsan.
-
-Barnoota:
-1. Yatimni kunuunsa fi rahmata barbaada.
-2. Rakkina keessatti obsa qabaachuun barbaachisaa dha.
-3. Ijoollee fi namoota dadhaboo gargaaruu qabna.`
+    title: "Dhaloota Nabiyyii ﷺ",
+    text: `Nabiyyiin Muhammad ﷺ bara 570 ykn 571 Dh.K.D.tti Makka keessatti dhalatan jedhamee beekama. Abbaa isaanii Abdullah, haadha isaanii Aamina jedhama. Isaan gosa Quraysh keessaa turan.`
   },
   {
-    maqaa: "2. Dargaggummaa fi Amanamummaa",
-    seenaa: `Nabiyyiin Muhammad (SAW) dargaggummaa isaanii keessatti amanamummaa fi dhugaa dubbachuun beekamu turan.
-
-Ummanni Makkaa isaan "Al-Amiin" jechuun waama ture; hiikni isaa nama amanamaa jechuudha.
-
-Daldala keessatti amanamoo turan. Namoota hin gowwoomsan; waadaa isaanii ni eegu turan.
-
-Barnoota:
-1. Dhugaa dubbachuu qabna.
-2. Amanamoo ta'uu qabna.
-3. Daldala keessatti gowwoomsuu irraa fagaachuu qabna.`
+    title: "Abbaa fi Haadha isaanii",
+    text: `Abbaan Nabiyyii ﷺ osoo isaan hin dhalatin du'an. Haati isaanii Aamina yeroo Nabiyyiin ﷺ umuriin isaanii waggaa ja'a ta'u duute. Sana booda akaakayyuun isaanii Abdul-Muttalib isaan kunuunsan.`
   },
   {
-    maqaa: "3. Fuudha Khadiijaa (RA)",
-    seenaa: `Nabiyyiin Muhammad (SAW) Khadiijaa bint Khuwaylid (RA) waliin fuudhan.
-
-Khadiijaan dubartii kabajamtuu, daldaltuu fi amala gaarii qabdu turte.
-
-Yeroo wahyiin jalqaba bu'e, Khadiijaan Nabiyyii (SAW) jajjabeessite; isa amantee deeggarsa guddaa gooteef.
-
-Khadiijaan dubartoota Islaama fudhatan jalqabaa keessaa turte.
-
-Barnoota:
-1. Haadha manaa fi maatii keenya kabajuu qabna.
-2. Nama rakkate jajjabeessuu qabna.
-3. Haqa irratti dhaabbachuu qabna.`
+    title: "Abbaa Adeessaa Abu Taalib",
+    text: `Abdul-Muttalib erga du'anii booda Nabiyyiin ﷺ abbaa adeessaa isaanii Abu Taalib jalatti guddatan. Abu Taalib isaan kunuunsanii fi eegan.`
   },
   {
-    maqaa: "4. Wahyii Jalqabaa",
-    seenaa: `Nabiyyiin Muhammad (SAW) yeroo umriin isaanii waggaa 40 ta'u, holqa Hiraa keessatti yeroo ibaadaa keessa turan, Jibriil (AS) isaanitti dhufe.
-
-Jibriil (AS) ajaja Rabbiitiin wahyii jalqabaa, aayata Suuratul-Alaq keessaa, isaanitti dubbise.
-
-Nabiyyiin (SAW) gara mana isaanii deebi'an. Khadiijaan isaan jajjabeessite; booda warra beekumsa qaban bira geessite.
-
-Ergasii Muhammad (SAW) ergamaa Rabbiitiin ta'anii namoota gara tawhiidaatti waamuu jalqaban.
-
-Barnoota:
-1. Beekumsa barachuu barbaachisaa dha.
-2. Nama sodaatu jajjabeessuu qabna.
-3. Rabbiin nama filate karaa Isaa irratti qajeelcha.`
+    title: "Amanamummaa Nabiyyii ﷺ",
+    text: `Nabiyyiin Muhammad ﷺ amanamummaa fi dhugaa dubbachuun beekamu turan. Namoonni Makkaa Al-Amiin, jechuunis amanamaa, jedhanii isaan waamu turan.`
   },
   {
-    maqaa: "5. Da'awaa Dhoksaa",
-    seenaa: `Nabiyyiin Muhammad (SAW) jalqaba namoota muraasa gara Islaamaatti waaman.
-
-Khadiijaa (RA), Abu Bakr (RA), Alii (RA) fi namoonni biroon Islaama fudhatan.
-
-Muslimoonni jalqabaa amantii isaanii barachuu fi ibaadaa raawwachuu irratti jabaatan.
-
-Barnoota:
-1. Hojii gaarii beekumsa irratti hundeessuu qabna.
-2. Hiriyoota gaarii filachuu qabna.
-3. Amantii keenya barachuu qabna.`
+    title: "Fuudhaa Khadiijaa رضي الله عنها",
+    text: `Nabiyyiin ﷺ Khadiijaa bint Khuwaylid رضي الله عنها fuudhan. Khadiijaan haadha warraa isaanii isa jalqabaa fi namoota jalqaba Islaama fudhatan keessaa tokko turte.`
   },
   {
-    maqaa: "6. Da'awaa Ifaatti",
-    seenaa: `Rabbiin Nabiyyii Muhammad (SAW) ummata isaanii ifatti waamu ajaje.
-
-Nabiyyiin (SAW) tawhiida barsiisan; sanamoota gabbaruu irraa namoota akeekkachiisan.
-
-Qureeyshonni hedduun isaan morman; Muslimoota tokko tokko miidhan.
-
-Nabiyyiin (SAW) waamicha isaanii itti fufan.
-
-Barnoota:
-1. Dhugaa barsiisuun obsa barbaada.
-2. Nama miidhuu hin qabnu.
-3. Waan gaarii irratti obsaan dhaabbachuu qabna.`
+    title: "Wahyiin jalqabaa",
+    text: `Nabiyyiin ﷺ yeroo umuriin isaanii waggaa 40 ta'u, holqa Hiraa keessatti Jibriil عليه السلام irraa wahyii jalqabaa argatan. Aayanni jalqabaa Suuraa Al-Alaq keessaa aayata 1–5 ture.`
   },
   {
-    maqaa: "7. Rakkina Muslimoota Jalqabaa",
-    seenaa: `Muslimoonni jalqabaa Makkaa keessatti rakkina guddaa keessa darban.
-
-Bilaal Ibn Rabaah (RA) amantii isaa irraa akka deebi'uuf miidhaan irra ga'e; garuu inni amantii isaa irratti jabaatee dhaabbate.
-
-Sahaboonni biroonis rakkoo fi miidhaa obsan.
-
-Nabiyyiin (SAW) Muslimoota jajjabeessan.
-
-Barnoota:
-1. Amantii irratti jabaachuu qabna.
-2. Nama miidhuu fi cunqursuu hin qabnu.
-3. Namoota rakkatan gargaaruu qabna.`
+    title: "Islaama waamuu",
+    text: `Nabiyyiin ﷺ namoota gara tawhiidaa, Rabbiin Tokkicha qofa gabbaruutti waamuu jalqaban. Jalqaba maatii fi hiriyoota isaanii keessaa namoota muraasa waaman; booda waamichi isaanii bal'ate.`
   },
   {
-    maqaa: "8. Hijraa gara Habashaa",
-    seenaa: `Muslimoonni tokko tokko miidhaa Makkaa keessatti isaan irra ga'u irraa baraaramuuf gara Habashaa godaanan.
-
-Mootiin Habashaa Najjaashii jedhamu haqa irratti murteessuun beekama ture.
-
-Muslimoonni isa bira nagaa argatan.
-
-Barnoota:
-1. Haqaaf dhaabbachuu qabna.
-2. Namoota amantii isaanii kabajan kabajuu qabna.
-3. Namoota rakkatanitti rahmata gochuu qabna.`
+    title: "Rakkina Makkaa",
+    text: `Muslimoonni jalqabaa sababii amantii isaanii Islaamaatiin rakkina hedduu keessa darbani. Nabiyyiin ﷺ obsaan, amantiitti jabaatanii, namoota gara Rabbiitti waamuu itti fufan.`
   },
   {
-    maqaa: "9. Waggaa Gaddaa",
-    seenaa: `Yeroo Makkaa keessatti rakkina cimaa keessa turan, Khadiijaan (RA) fi abbeeraan isaanii Abu Xaalib du'an.
-
-Waggaan kun gadda guddaa waan fideef "Waggaa Gaddaa" jedhamee beekama.
-
-Nabiyyiin (SAW) rakkina kana keessatti obsa qabaatan; da'awaa isaanii itti fufan.
-
-Barnoota:
-1. Yeroo gaddaa Rabbiitti hirkachuu qabna.
-2. Nama jaallannu du'aan dhabuu keessatti obsa barbaachisa.
-3. Hojii gaarii itti fufuu qabna.`
+    title: "Hijraa gara Habaashaa",
+    text: `Muslimoonni muraasni ajaja Nabiyyii ﷺ tiin gara Habaashaa godaanan. Achitti mootii Najaashii biratti nageenya argatan.`
   },
   {
-    maqaa: "10. Hijraa gara Madiinaa",
-    seenaa: `Nabiyyiin Muhammad (SAW) ajaja Rabbiitiin Makkaa irraa gara Madiinaa godaanan.
-
-Abu Bakr (RA) isaanii waliin ture.
-
-Muslimoonni Madiinaa keessatti Nabiyyii (SAW) simatan; hawaasni Muslimootaa jabaachuu jalqabe.
-
-Hijraan seenaa Islaamaa keessatti jijjiirama guddaa fide.
-
-Barnoota:
-1. Obsa fi karoora qabaachuun barbaachisaa dha.
-2. Obboleeyyan Muslimootaa wal gargaaruu qabu.
-3. Rabbiitti hirkachuun barbaachisaa dha.`
+    title: "Waggaa Gadda",
+    text: `Khadiijaan رضي الله عنها fi Abu Taalib yeroo walitti dhihaatanii du'an. Bara kana Nabiyyiin ﷺ gadda guddaa keessa darbani; waggaa gaddaa jedhamee beekama.`
   },
   {
-    maqaa: "11. Masjiida Nabawii Ijaaruu",
-    seenaa: `Nabiyyiin (SAW) Madiinaa erga ga'anii booda masjiida ijaaruu keessatti hirmaatan.
-
-Masjiidni Nabawii bakka salaataa, barnootaa fi walga'ii Muslimootaa ta'e.
-
-Nabiyyiin (SAW) Sahaboota waliin hojjechuu fi wal gargaaruu barsiisan.
-
-Barnoota:
-1. Masjiida kabajuu qabna.
-2. Hojii gaarii keessatti hirmaachuu qabna.
-3. Wal gargaaruun hawaasa jabeessa.`
+    title: "Hijraa gara Madiinaa",
+    text: `Nabiyyiin ﷺ ajaja Rabbiitiin Makkaa irraa gara Madiinaa godaanan. Abu Bakr رضي الله عنه isaan waliin ture. Hijraan kun seenaa Islaamaa keessatti taatee guddaa dha.`
   },
   {
-    maqaa: "12. Obbolummaa Muhajiriinaa fi Ansaar",
-    seenaa: `Nabiyyiin (SAW) Muslimoota Makkaa irraa godaanan (Muhajiriin) fi Muslimoota Madiinaa (Ansaar) gidduutti obbolummaa cimsan.
-
-Ansaaronni obboloota isaanii godaanan gargaaran; mana, nyaata fi deeggarsa kennaniif.
-
-Kun obbolummaa fi arjummaa Islaamaa keessatti fakkeenya guddaa ta'e.
-
-Barnoota:
-1. Hiyyeeyyii fi godaantota gargaaruu qabna.
-2. Obbolummaa Muslimootaa kabajuu qabna.
-3. Qabeenya qooduun hojii gaarii dha.`
+    title: "Masjiida Nabawii",
+    text: `Madiinaa erga ga'anii booda Nabiyyiin ﷺ masjiida ijaaruu keessatti hirmaatan. Masjiidni Nabawii bakka salaataa, barnootaa fi hojii hawaasaa ta'e.`
   },
   {
-    maqaa: "13. Gahuumsa Badr",
-    seenaa: `Bara 2 Hijraa keessa lola Badr ta'e.
-
-Muslimoonni lakkoofsaan muraasa turan; garuu Rabbiin isaan gargaare.
-
-Seenaa kana keessatti Muslimoonni obsa, tokkummaa fi ajajamuu baratan.
-
-Barnoota:
-1. Rabbiitti hirkachuu qabna.
-2. Tokkummaa eeguu qabna.
-3. Ajaja sirrii hordofuu qabna.`
+    title: "Obbolummaa Muhaajirii fi Ansaar",
+    text: `Nabiyyiin ﷺ Muslimoota Makkaa irraa godaanan, Muhaajiroota, fi Muslimoota Madiinaa, Ansaar, gidduutti obbolummaa cimsan. Kun tokkummaa fi waliif yaaduu guddisuuf gargaare.`
   },
   {
-    maqaa: "14. Gahuumsa Uhud",
-    seenaa: `Lolli Uhud bara 3 Hijraa keessa ta'e.
-
-Muslimoonni qormaata guddaa keessa darban. Nabiyyiin (SAW) ummata isaanii barsiisan akka ajaja hoggansa isaanii hordofan.
-
-Seenaa Uhud keessatti ajajamuu, obsa fi dogoggora irraa barachuun barbaachisaa ta'uu hubanna.
-
-Barnoota:
-1. Ajaja sirrii hordofuu qabna.
-2. Dogoggora irraa barachuu qabna.
-3. Yeroo rakkinaatti obsa qabaachuu qabna.`
+    title: "Lola Badrii",
+    text: `Lolli Badrii bara 2 Hijriyaa keessatti Muslimoota fi Quraysh gidduutti ta'e. Muslimoonni lakkoofsaan xiqqaa turanis, Rabbiin isaan gargaaruun injifannoo argatan.`
   },
   {
-    maqaa: "15. Sulhii Hudaibiyyah",
-    seenaa: `Nabiyyiin (SAW) fi Sahaboonni isaanii Umraa raawwachuuf ka'an; garuu Hudaibiyyah keessatti waliigalteen uumame.
-
-Waliigalteen sun yeroo jalqabaatti namoota tokko tokkoof ulfaataa fakkaatus, booda Islaamni babal'achuuf karaa bane.
-
-Barnoota:
-1. Nagaa barbaaduun barbaachisaa dha.
-2. Murtii keessatti obsa qabaachuu qabna.
-3. Waliigaltee eeguu qabna.`
+    title: "Fath Makkaa",
+    text: `Bara 8 Hijriyaa Nabiyyiin ﷺ Makkaa seenuun injifatan. Namoota hedduuf araara godhan. Ka'baa keessatti waaqeffannaa Rabbiin Tokkicha qofaaf ta'u deebisuun barbaachisaa ture.`
   },
   {
-    maqaa: "16. Fathii Makkaa",
-    seenaa: `Bara 8 Hijraa keessatti Muslimoonni Makkaa seenuun injifannoo guddaa argatan.
-
-Nabiyyiin (SAW) yeroo humna argatan, namoota hedduuf dhiifama godhan.
-
-Isaan sanamoota Ka'baa keessaa balleessanii Ka'baa ibaadaa Rabbiitiif qulqulleessan.
-
-Barnoota:
-1. Dhiifama gochuun amala gaarii dha.
-2. Yeroo humna qabnu nama hin cunqursin.
-3. Rabbiin qofa gabbaruu qabna.`
+    title: "Hajjii Wadaa",
+    text: `Nabiyyiin ﷺ bara 10 Hijriyaa hajjii isaanii isa dhumaa raawwatani. Khutbaa isaanii keessatti dhiiga, qabeenya, mirga namootaa fi waliif kabaja qabaachuu irratti gorsan.`
   },
   {
-    maqaa: "17. Hajjii Dhaamu fi Khuxbaa",
-    seenaa: `Nabiyyiin Muhammad (SAW) Hajjii isaanii dhumaa keessatti Muslimoota barsiisan.
-
-Khuxbaa isaanii keessatti dhiiga, qabeenyaa fi kabaja namootaa eeguun; haqaan jiraachuun; dirqama amantii raawwachuun barbaachisaa ta'uu yaadachiisan.
-
-Barnoota:
-1. Qabeenyaa fi lubbuu namaa kabajuu qabna.
-2. Haqa irratti dhaabbachuu qabna.
-3. Muslimoonni obboloota.
-4. Amantii fi naamusa gaarii eeguu qabna.`
+    title: "Du'a Nabiyyii ﷺ",
+    text: `Nabiyyiin Muhammad ﷺ bara 11 Hijriyaa, Madiinaa keessatti du'an. Umuriin isaanii gara waggaa 63 ture. Muslimoonni Qur'aana fi Sunnah isaanii hordofuun barnoota isaanii irraa fayyadamu.`
   },
   {
-    maqaa: "18. Du'a Nabiyyii Muhammad (SAW)",
-    seenaa: `Nabiyyiin Muhammad (SAW) Madiinaa keessatti bara 11 Hijraa du'an. Umriin isaanii gara waggaa 63 ture.
-
-Duuti isaanii Sahaboota gaddisiise. Abu Bakr (RA) Muslimoota yaadachiise akka Muhammad (SAW) ergamaa Rabbiitiin ta'an; Rabbiin garuu jiraataa hin duune ta'uu.
-
-Nabiyyiin (SAW) Qur'aana fi Sunnah ummataaf dhiisanii darbaniiru.
-
-Barnoota:
-1. Nabiyyii (SAW) jaallachuu fi Sunnah isaa hordofuu qabna.
-2. Qur'aana barachuu qabna.
-3. Duuti nama hundaaf dhufa; hojii gaarii qopheeffachuu qabna.`
+    title: "Barnoota Seenaa Nabiyyii ﷺ",
+    text: `Seenaa Nabiyyii ﷺ irraa dhugaa dubbachuu, amanamummaa, obsa, araara, rahmata, haqa fi Rabbiin irratti hirkachuu baranna.`
   }
 ];
 
-// ==========================================
-// SEENAA SAHABOOTAA
-// ==========================================
+/* =========================
+   SEENAA SAHABOOTAA
+========================= */
 
 const SEENAA_SAHABOOTAA = [
   {
-    maqaa: "1. Abu Bakr As-Siddiiq (RA)",
-    seenaa: `Abu Bakr (RA) hiriyyaa dhihoo Nabiyyii Muhammad (SAW) ture.
-
-Inni namoota jalqaba Islaama fudhatan keessaa tokko ture. Hijraa gara Madiinaa keessatti Nabiyyii (SAW) waliin godaane.
-
-Nabiyyii (SAW) booda khaliifaa jalqabaa Muslimootaa ta'e. Yeroo namoonni tokko tokko rakkina keessa seenan, inni Muslimoota tokkummaa irratti jabeesse.
-
-Barnoota:
-1. Amanamummaa qabaachuu qabna.
-2. Hiriyyaa gaarii ta'uu qabna.
-3. Hojii gaarii keessatti jabaachuu qabna.`
+    title: "Abu Bakr As-Siddiiq رضي الله عنه",
+    text: `Abu Bakr رضي الله عنه hiriyyaa dhihoo Nabiyyii ﷺ fi dhiira bilisa ta'e keessaa nama jalqabaa Islaama fudhate ture. Hijraa keessatti Nabiyyii ﷺ waliin ture. Erga Nabiyyiin ﷺ du'anii booda khalifaa jalqabaa ta'e.`
   },
   {
-    maqaa: "2. Umar Ibn Al-Khaxxaab (RA)",
-    seenaa: `Umar (RA) khaliifaa lammaffaa Muslimootaa ture.
-
-Islaama fudhachuu isaa booda Muslimoonni jajjabina argatan. Inni haqaan bulchuu fi dadhaboo gargaaruu keessatti beekama.
-
-Barnoota:
-1. Haqaaf dhaabbachuu qabna.
-2. Namoota walqixa ilaaluu qabna.
-3. Dadhaboo fi hiyyeeyyii gargaaruu qabna.`
+    title: "Umar ibn Al-Khattab رضي الله عنه",
+    text: `Umar رضي الله عنه khalifaa lammaffaa ture. Haqa, murtii cimaa fi haqaan bulchuu isaatiin beekama. Yeroo isaa keessatti mootummaa Islaamaa bal'inaan babal'ate.`
   },
   {
-    maqaa: "3. Usmaan Ibn Affaan (RA)",
-    seenaa: `Usmaan (RA) khaliifaa sadaffaa Muslimootaa ture.
-
-Inni arjummaa fi naamusa gaariin beekama. Qur'aana Muslimootaaf akka qaraatii irratti tokkummaa qabaatuuf hojii guddaa hojjete.
-
-Barnoota:
-1. Arjaa ta'uu qabna.
-2. Qur'aana barachuu qabna.
-3. Qabeenya keenya hojii gaariif oolchuu qabna.`
+    title: "Usman ibn Affan رضي الله عنه",
+    text: `Usman رضي الله عنه khalifaa sadaffaa ture. Qabeenya isaa Muslimoota gargaaruuf oolcha ture. Mushafii Qur'aanaa irratti Muslimoonni tokko akka hordofan hojii guddaa raawwate.`
   },
   {
-    maqaa: "4. Alii Ibn Abii Xaalib (RA)",
-    seenaa: `Alii (RA) ilma adeeraa Nabiyyii Muhammad (SAW) fi abbaa manaa Faaximaa (RA) ture.
-
-Inni ijoollummaa irraa Islaama fudhate. Beekumsa, gootummaa fi haqaan dhaabbachuu keessatti beekama.
-
-Aliin khaliifaa afraffaa Muslimootaa ta'e.
-
-Barnoota:
-1. Beekumsa barachuu qabna.
-2. Haqaaf dhaabbachuu qabna.
-3. Amala gaarii qabaachuu qabna.`
+    title: "Ali ibn Abi Taalib رضي الله عنه",
+    text: `Ali رضي الله عنه ilma abbaa adeessaa Nabiyyii ﷺ fi abbaa warraa Faaximaa رضي الله عنها ture. Khalifaa afraffaa fi nama beekumsa, gootummaa fi murtii isaatiin beekamu ture.`
   },
   {
-    maqaa: "5. Khadiijaa Bint Khuwaylid (RA)",
-    seenaa: `Khadiijaa (RA) haadha manaa jalqabaa Nabiyyii Muhammad (SAW) turte.
-
-Yeroo wahyiin jalqaba bu'e, Nabiyyii (SAW) amantee jajjabeessite. Qabeenya fi deeggarsa isheetiin Islaamaaf gumaacha guddaa goote.
-
-Barnoota:
-1. Nama rakkate gargaaruu qabna.
-2. Nama keenya jajjabeessuu qabna.
-3. Amanamummaa qabaachuu qabna.`
+    title: "Khadiijaa bint Khuwaylid رضي الله عنها",
+    text: `Khadiijaan رضي الله عنها haadha warraa Nabiyyii ﷺ isa jalqabaa turte. Yeroo wahyiin jalqabaa dhufe Nabiyyii ﷺ jajjabeessite, amantii isaanii fudhatte, qabeenya isheetiinis Islaama deeggarte.`
   },
   {
-    maqaa: "6. A'ishaa Bint Abii Bakr (RA)",
-    seenaa: `A'ishaa (RA) haadha mu'mintootaa fi haadha manaa Nabiyyii (SAW) turte.
-
-Beekumsa Islaamaa fi hadiisaa dabarsuu keessatti gahee guddaa qabdi. Muslimoonni hedduun beekumsa ishee irraa baratan.
-
-Barnoota:
-1. Beekumsa barachuu qabna.
-2. Beekumsa sirriitti dabarsuu qabna.
-3. Barumsa amantii irratti jabaachuu qabna.`
+    title: "Aa'ishaa رضي الله عنها",
+    text: `Aa'ishaan رضي الله عنها haadha warraa Nabiyyii ﷺ turte. Beekumsa hadiisaa fi fiqhiitiin beekamti. Sahaboonni hedduun beekumsa amantii ishee irraa baratan.`
   },
   {
-    maqaa: "7. Bilaal Ibn Rabaah (RA)",
-    seenaa: `Bilaal (RA) Sahabii Islaamaaf rakkina guddaa obse ture.
-
-Yeroo Makkaa keessatti miidhaa irra ga'us amantii isaa irraa hin deebi'in. Inni mu'azzina Nabiyyii (SAW) ta'uun beekama.
-
-Barnoota:
-1. Amantii irratti jabaachuu qabna.
-2. Namoota halluu fi dhalootaan tuffachuu hin qabnu.
-3. Nama miidhametti rahmata gochuu qabna.`
+    title: "Bilaal ibn Rabaah رضي الله عنه",
+    text: `Bilaal رضي الله عنه Muslimoota jalqabaa keessaa tokko ture. Rakkina guddaa keessa darbellee amantii isaa irratti jabaate. Nabiyyiin ﷺ mu'azzina isaanii godhan.`
   },
   {
-    maqaa: "8. Mus'ab Ibn Umayr (RA)",
-    seenaa: `Mus'ab (RA) dargaggeessa Makkaa keessatti jiraataa ture. Islaama fudhatee booda rakkina obse.
-
-Nabiyyiin (SAW) isa gara Madiinaa ergan, akka namoota Islaama barsiisuuf. Inni da'awaa keessatti gahee guddaa qabaate.
-
-Barnoota:
-1. Beekumsa barachuu qabna.
-2. Beekumsa namootaaf dabarsuu qabna.
-3. Hojii gaarii keessatti obsa qabaachuu qabna.`
+    title: "Mus'ab ibn Umayr رضي الله عنه",
+    text: `Mus'ab رضي الله عنه dargaggeessa Quraysh keessaa jireenya qananii qabu ture. Islaama erga fudhatee booda amantii isaa filate. Nabiyyiin ﷺ isa gara Madiinaa barsiisaa fi waamicha amantii godhuuf ergan.`
   },
   {
-    maqaa: "9. Abu Hurayrah (RA)",
-    seenaa: `Abu Hurayrah (RA) Sahaboota hadiisaa baay'ee dabarsan keessaa tokko ture.
-
-Inni Nabiyyii (SAW) irraa barachuu fi hadiisa ummataaf dabarsuu irratti xiyyeeffate.
-
-Barnoota:
-1. Hadiisa sirriitti barachuu qabna.
-2. Beekumsa amanamummaadhaan dabarsuu qabna.
-3. Barumsa itti fufuu qabna.`
+    title: "Abu Hurayrah رضي الله عنه",
+    text: `Abu Hurayrah رضي الله عنه hadiisa Nabiyyii ﷺ baay'ee dabarse. Beekumsa Sunnah tiksuu fi barsiisuu keessatti gahee guddaa qaba.`
   },
   {
-    maqaa: "10. Salman Al-Faarisii (RA)",
-    seenaa: `Salman Al-Faarisii (RA) dhugaa barbaaduuf imala dheeraa taasise.
-
-Dhuma irratti Nabiyyii Muhammad (SAW) argatee Islaama fudhate. Yaada isaa keessatti Muslimoota gargaaruun beekama.
-
-Barnoota:
-1. Dhugaa barbaaduu hin dhiisin.
-2. Beekumsa barachuu itti fufi.
-3. Namoota kabajuu qabna.`
+    title: "Salmaan Al-Faarisii رضي الله عنه",
+    text: `Salmaan رضي الله عنه dhugaa amantii barbaacha imala dheeraa godhe. Dhumarratti Islaama fudhate. Yaada boolla qotuu lola Khandaq keessatti dhiheessuun beekama.`
   },
   {
-    maqaa: "11. Abdur-Rahmaan Ibn Awf (RA)",
-    seenaa: `Abdur-Rahmaan Ibn Awf (RA) Sahabii daldalaa fi arjaa ture.
-
-Qabeenya isaa keessaa hedduu hojii gaarii fi Muslimoota gargaaruuf oolche.
-
-Barnoota:
-1. Daldala keessatti amanamoo ta'uu qabna.
-2. Hiyyeeyyii gargaaruu qabna.
-3. Arjummaa qabaachuu qabna.`
+    title: "Abdur-Rahmaan ibn Awf رضي الله عنه",
+    text: `Abdur-Rahmaan رضي الله عنه sahaabaa dureessa fi arjaa ture. Qabeenya isaa Muslimoota gargaaruuf oolcha ture. Dureessummaa isaa waliin tawwaa fi sadaqaa jaallata ture.`
   },
   {
-    maqaa: "12. Abu Ubaydah Ibn Al-Jarraah (RA)",
-    seenaa: `Abu Ubaydah (RA) Sahabii amanamaa ture. Nabiyyii Muhammad (SAW) biratti amanamummaa qabaachuun beekama.
-
-Barnoota:
-1. Amanamummaa qabaachuu qabna.
-2. Waadaa eeguu qabna.
-3. Hojii itti gaafatamummaa qabu sirriitti raawwachuu qabna.`
+    title: "Abu Ubaydah ibn Al-Jarraah رضي الله عنه",
+    text: `Abu Ubaydah رضي الله عنه sahaabaa amanamaa fi hogganaa waraanaa ture. Nabiyyiin ﷺ amanamummaa isaa faarsan.`
   },
   {
-    maqaa: "13. Talhaa Ibn Ubaydillaah (RA)",
-    seenaa: `Talhaa (RA) Sahaboota beekamoo keessaa tokko ture. Nabiyyii (SAW) deeggaruu fi Islaamaaf dhaabbachuu keessatti gahee qaba.
-
-Barnoota:
-1. Nama gaarii gargaaruu qabna.
-2. Amanamummaa qabaachuu qabna.
-3. Hojii gaarii keessatti hirmaachuu qabna.`
+    title: "Talhah ibn Ubaydillah رضي الله عنه",
+    text: `Talhah رضي الله عنه sahaabaa goota ture. Lola Uhud keessatti Nabiyyii ﷺ eeguuf gootummaa guddaa agarsiise.`
   },
   {
-    maqaa: "14. Zubayr Ibn Al-Awwaam (RA)",
-    seenaa: `Zubayr (RA) Sahabii Nabiyyii Muhammad (SAW) deeggaru keessaa tokko ture. Islaama keessatti gootummaa fi amanamummaa qabaachuun beekama.
-
-Barnoota:
-1. Amanamummaa qabaachuu qabna.
-2. Dhugaa irratti jabaachuu qabna.
-3. Hiriyoota gaarii ta'uu qabna.`
+    title: "Az-Zubayr ibn Al-Awwaam رضي الله عنه",
+    text: `Az-Zubayr رضي الله عنه sahaabaa goota fi namoota Islaama jalqabaa fudhatan keessaa tokko ture. Lola keessatti Nabiyyii ﷺ deeggaruun beekama.`
   },
   {
-    maqaa: "15. Sa'd Ibn Abii Waqqaas (RA)",
-    seenaa: `Sa'd Ibn Abii Waqqaas (RA) Sahabii beekamaa fi namoota Islaama jalqaba fudhatan keessaa tokko ture.
-
-Inni Muslimoota jalqabaa keessaa ta'uun, Islaamaaf gumaacha guddaa qaba.
-
-Barnoota:
-1. Amantii keenyaaf amanamoo ta'uu qabna.
-2. Hojii gaarii keessatti jabaachuu qabna.`
+    title: "Sa'd ibn Abi Waqqaas رضي الله عنه",
+    text: `Sa'd رضي الله عنه sahaabaa goota ture. Muslimoota jalqabaa keessaa tokko yoo ta'u, xiyya darbuu irratti beekama.`
   },
   {
-    maqaa: "16. Khaalid Ibn Al-Waliid (RA)",
-    seenaa: `Khaalid Ibn Al-Waliid (RA) hogganaa waraanaa beekamaa ture. Islaama erga fudhatee booda Muslimoota waliin hirmaate.
-
-Inni ogummaa hoggansaa fi murannoo qabaachuun beekama.
-
-Barnoota:
-1. Ogummaa gaariitti fayyadamuu qabna.
-2. Hojii keessatti murannoo qabaachuu qabna.
-3. Hoggansi itti gaafatamummaa dha.`
+    title: "Khaalid ibn Al-Waliid رضي الله عنه",
+    text: `Khaalid رضي الله عنه hogganaa waraanaa beekamaa ture. Islaama erga fudhatee booda Muslimootaaf lolaa fi hojii waraanaa keessatti tajaajila guddaa kenne.`
   },
   {
-    maqaa: "17. Ja'far Ibn Abii Xaalib (RA)",
-    seenaa: `Ja'far (RA) obboleessa Alii (RA) ture. Hijraa gara Habashaa keessatti Muslimoota bakka bu'ee mootii Najjaashii duratti dubbate.
-
-Inni amantii Muslimootaa kabajaa fi ifa ta'een ibse.
-
-Barnoota:
-1. Dhugaa ibsuu qabna.
-2. Amantii keenya beekuu qabna.
-3. Haqaaf dhaabbachuu qabna.`
+    title: "Ja'far ibn Abi Taalib رضي الله عنه",
+    text: `Ja'far رضي الله عنه obboleessa Alii fi sahaabaa goota ture. Habaashaa keessatti Muslimoota bakka bu'uun mootii Najaashii duratti haala Muslimootaa ibse.`
   },
   {
-    maqaa: "18. Anas Ibn Maalik (RA)",
-    seenaa: `Anas Ibn Maalik (RA) yeroo ijoollee ture Nabiyyii (SAW) tajaajile. Inni Nabiyyii irraa hadiisaa fi amala isaanii barate.
-
-Barnoota:
-1. Nama gaarii irraa barachuu qabna.
-2. Hadiisa amanamummaadhaan dabarsuu qabna.
-3. Ijoollee beekumsa baratan jajjabeessuu qabna.`
+    title: "Anas ibn Maalik رضي الله عنه",
+    text: `Anas رضي الله عنه waggoota hedduuf Nabiyyii ﷺ tajaajile. Hadiisa hedduu dabarse; amala gaarii Nabiyyii ﷺ irraa barate.`
   },
   {
-    maqaa: "19. Abu Dharr Al-Ghifaarii (RA)",
-    seenaa: `Abu Dharr (RA) Sahabii dhugaa dubbachuu fi jireenya salphaa jaallachuun beekama ture.
-
-Barnoota:
-1. Dhugaa dubbachuu qabna.
-2. Qabeenyaaf qofa jiraachuu hin qabnu.
-3. Hiyyeeyyii gargaaruu qabna.`
+    title: "Abu Dharr Al-Ghifaarii رضي الله عنه",
+    text: `Abu Dharr رضي الله عنه Islaama jalqaba fudhatan keessaa tokko ture. Jireenya salphaa, dhugaa dubbachuu fi qabeenya irratti of eeggannoo qabaachuu irratti beekama.`
   },
   {
-    maqaa: "20. Ummu Salamaa (RA)",
-    seenaa: `Ummu Salamaa (RA) haadha mu'mintootaa fi haadha manaa Nabiyyii (SAW) turte.
-
-Isheen ogummaa, obsa fi gorsa gaarii qabaachuun beekamti.
-
-Barnoota:
-1. Gorsa gaarii fudhachuu qabna.
-2. Obsa qabaachuu qabna.
-3. Dubartoota beekumsa qaban kabajuu qabna.`
+    title: "Umm Salama رضي الله عنها",
+    text: `Umm Salama رضي الله عنها haadha warraa Nabiyyii ﷺ fi dubartii beekumsa qabdu turte. Gorsa fi beekumsa isheetiin Muslimoota gargaarte.`
   }
 ];
 
-// ==========================================
-// MENU
-// ==========================================
+/* =========================
+   MENU
+========================= */
 
 function mainMenu() {
-  return `🕌 *HIDAAYATUL-BAYAAN*
+  return `🌿 *HIDAAYATUL-BAYAAN* 🌿
 
-Assalaamu alaykum wa rahmatullaahi wa barakaatuh.
+Assalaamu Alaikum warahmatullaahi wabarakaatuh.
 
-📚 *Kutaa Barnoota Seenaa*
+Baga gara Hidaayatul-Bayaan dhuftan.
 
-1️⃣ Seenaa Nabiyyii Muhammad (SAW)
-2️⃣ Seenaa Sahaboota
+📚 Barnoota keenya keessaa filadhu:
 
-Lakkoofsa filannoo kee ergi.
+1️⃣ Seenaa Nabiyyii Muhammad ﷺ
+2️⃣ Seenaa Sahabootaa
 
-0️⃣ Menu jalqabaatti deebi'i`;
+🔢 Lakkoofsa 1 ykn 2 ergi.
+
+0️⃣ Gara menu jalqabaatti deebi'i.
+
+اللهم صل وسلم على نبينا محمد ﷺ`;
 }
 
-function makeList(list, title) {
-  let out = `📚 *${title}*\n\n`;
+function makeList(items, heading) {
+  let result = `${heading}\n\n`;
 
-  list.forEach((item, index) => {
-    out += `${index + 1}. ${item.maqaa}\n`;
+  items.forEach((item, index) => {
+    result += `${index + 1}️⃣ ${item.title}\n`;
   });
 
-  out += `\nLakkoofsa seenaa dubbisuu barbaaddu ergi.\n`;
-  out += `0️⃣ Gara menu jalqabaatti deebi'i`;
-
-  return out;
+  result += `\nLakkoofsa seenaa barbaaddu ergi.\n0️⃣ Gara menu jalqabaatti deebi'i.`;
+  return result;
 }
 
-function getStoryList(type) {
-  if (type === "prophet") return SEENAA_NABIYYII;
-  if (type === "sahaba") return SEENAA_SAHABOOTAA;
-  return [];
+function storyText(item, index, items) {
+  const next = index < items.length - 1
+    ? `\n\n➡️ Itti aanuuf: ${index + 2} ergi.`
+    : `\n\n✅ Seenaa tarree kanaa xumurteetta.`;
+
+  return `📖 *${item.title}*\n\n${item.text}${next}\n\n0️⃣ Menu jalqabaatti deebi'i.`;
 }
 
-async function sendMessage(jid, text) {
-  if (!sock || !isWhatsAppConnected) {
-    console.log("WhatsApp hin hidhamne; ergaan hin ergamne.");
-    return;
-  }
-
-  await sock.sendMessage(jid, { text });
-}
-
-// ==========================================
-// WHATSAPP MESSAGE HANDLER
-// ==========================================
+/* =========================
+   WHATSAPP MESSAGE HANDLER
+========================= */
 
 async function handleMessage(message) {
-  if (!message.message || message.key.fromMe) return;
-
   const jid = message.key.remoteJid;
-  if (!jid || jid.endsWith("@g.us")) return;
 
-  const msg =
-    message.message.conversation ||
-    message.message.extendedTextMessage?.text ||
-    message.message.buttonsResponseMessage?.selectedButtonId ||
-    message.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+  if (!jid || jid === "status@broadcast" || message.key.fromMe) {
+    return;
+  }
+
+  const messageType = Object.keys(message.message || {})[0];
+
+  if (
+    messageType === "protocolMessage" ||
+    messageType === "senderKeyDistributionMessage"
+  ) {
+    return;
+  }
+
+  const text =
+    message.message?.conversation ||
+    message.message?.extendedTextMessage?.text ||
+    message.message?.imageMessage?.caption ||
     "";
 
-  const text = String(msg).trim();
+  const input = text.trim();
 
-  if (!text) return;
+  if (!input) return;
 
-  const lower = text.toLowerCase();
-  let session = sessions.get(jid);
+  const lower = input.toLowerCase();
 
-  console.log("WhatsApp message:", jid, text);
-
-  // Gara menu jalqabaa deebi'i
-  if (text === "0" || lower === "menu" || lower === "jalqaba") {
+  if (
+    ["hi", "hello", "salaam", "assalamu alaikum", "assalaamu alaikum", "akkam"].includes(lower)
+  ) {
     sessions.delete(jid);
-    await sendMessage(jid, mainMenu());
+    await sock.sendMessage(jid, { text: mainMenu() });
     return;
   }
 
-  // Yoo seenaa keessaa filachaa jiraate
-  if (session && (session.type === "prophet" || session.type === "sahaba")) {
-    const list = getStoryList(session.type);
+  if (input === "0") {
+    sessions.delete(jid);
+    await sock.sendMessage(jid, { text: mainMenu() });
+    return;
+  }
 
-    if (lower === "back" || lower === "b") {
-      await sendMessage(jid, mainMenu());
-      sessions.delete(jid);
-      return;
-    }
+  const session = sessions.get(jid);
 
-    const index = Number(text) - 1;
+  if (session?.section === "nabi") {
+    const number = Number(input);
 
     if (
-      !Number.isInteger(index) ||
-      index < 0 ||
-      index >= list.length
+      Number.isInteger(number) &&
+      number >= 1 &&
+      number <= SEENAA_NABIYYII.length
     ) {
-      await sendMessage(
-        jid,
-        `❌ Lakkoofsa sirrii miti.\n\n${makeList(
-          list,
-          session.type === "prophet"
-            ? "SEENAA NABIYYII MUHAMMAD (SAW)"
-            : "SEENAA SAHABOOTAA"
-        )}`
-      );
+      const index = number - 1;
+      await sock.sendMessage(jid, {
+        text: storyText(SEENAA_NABIYYII[index], index, SEENAA_NABIYYII)
+      });
       return;
     }
 
-    const story = list[index];
-
-    await sendMessage(
-      jid,
-      `📖 *${story.maqaa}*\n\n${story.seenaa}\n\n` +
-      `━━━━━━━━━━━━━━\n` +
-      `Seenaa biraa dubbisuuf lakkoofsa isaa ergi.\n` +
-      `0️⃣ Gara menu jalqabaatti deebi'i`
-    );
+    await sock.sendMessage(jid, {
+      text: `Lakkoofsa sirrii galchi.\n1 hanga ${SEENAA_NABIYYII.length} filadhu.\n\n0️⃣ Menu jalqabaatti deebi'i.`
+    });
     return;
   }
 
-  // Filannoo menu jalqabaa
-  if (text === "1") {
-    sessions.set(jid, { type: "prophet" });
+  if (session?.section === "sahaba") {
+    const number = Number(input);
 
-    await sendMessage(
-      jid,
-      makeList(SEENAA_NABIYYII, "SEENAA NABIYYII MUHAMMAD (SAW)")
-    );
+    if (
+      Number.isInteger(number) &&
+      number >= 1 &&
+      number <= SEENAA_SAHABOOTAA.length
+    ) {
+      const index = number - 1;
+      await sock.sendMessage(jid, {
+        text: storyText(SEENAA_SAHABOOTAA[index], index, SEENAA_SAHABOOTAA)
+      });
+      return;
+    }
+
+    await sock.sendMessage(jid, {
+      text: `Lakkoofsa sirrii galchi.\n1 hanga ${SEENAA_SAHABOOTAA.length} filadhu.\n\n0️⃣ Menu jalqabaatti deebi'i.`
+    });
     return;
   }
 
-  if (text === "2") {
-    sessions.set(jid, { type: "sahaba" });
+  if (input === "1") {
+    sessions.set(jid, { section: "nabi" });
 
-    await sendMessage(
-      jid,
-      makeList(SEENAA_SAHABOOTAA, "SEENAA SAHABOOTAA")
-    );
+    await sock.sendMessage(jid, {
+      text: makeList(SEENAA_NABIYYII, "📖 *SEENAA NABIYYII MUHAMMAD ﷺ*")
+    });
     return;
   }
 
-  // Jecha menu erguun menu argachuu
-  if (
-    ["hi", "hello", "salaam", "assalaamu alaykum", "start", "menu"].includes(
-      lower
-    )
-  ) {
-    await sendMessage(jid, mainMenu());
+  if (input === "2") {
+    sessions.set(jid, { section: "sahaba" });
+
+    await sock.sendMessage(jid, {
+      text: makeList(SEENAA_SAHABOOTAA, "🌟 *SEENAA SAHABOOTAA رضي الله عنهم*")
+    });
     return;
   }
 
-  await sendMessage(
-    jid,
-    `Assalaamu alaykum!\n\n${mainMenu()}`
-  );
+  await sock.sendMessage(jid, {
+    text: `Filannoo kee sirriitti hin hubanne.\n\n${mainMenu()}`
+  });
 }
 
-// ==========================================
-// START WHATSAPP
-// ==========================================
+/* =========================
+   START WHATSAPP
+========================= */
 
 async function startWhatsApp() {
+  if (isStarting) return;
+
+  isStarting = true;
+
   try {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
 
@@ -659,11 +361,9 @@ async function startWhatsApp() {
     sock = makeWASocket({
       auth: state,
       logger: pino({ level: "silent" }),
-      printQRInTerminal: false,
       browser: ["Hidaayatul-Bayaan", "Chrome", "1.0.0"],
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 60000,
-      keepAliveIntervalMs: 20000
+      markOnlineOnConnect: false,
+      syncFullHistory: false
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -672,18 +372,19 @@ async function startWhatsApp() {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        console.log("==================================");
-        console.log("WHATSAPP QR CODE:");
-        console.log(qr);
-        console.log("==================================");
-        console.log(
-          "QR code kana terminal irraa scan godhi. Yoo Render fayyadamte, QR kana argachuuf QR display endpoint dabalataa barbaachisuu danda'a."
-        );
+        currentQR = qr;
+        console.log("WhatsApp QR code generated.");
       }
 
       if (connection === "open") {
         isWhatsAppConnected = true;
-        console.log("WhatsApp connected successfully!");
+        currentQR = null;
+        console.log("Hidaayatul-Bayaan WhatsApp connected.");
+      }
+
+      if (connection === "connecting") {
+        isWhatsAppConnected = false;
+        console.log("WhatsApp connecting...");
       }
 
       if (connection === "close") {
@@ -692,16 +393,17 @@ async function startWhatsApp() {
         const statusCode =
           lastDisconnect?.error?.output?.statusCode;
 
-        const shouldReconnect =
-          statusCode !== DisconnectReason.loggedOut;
+        console.log("WhatsApp connection closed:", statusCode || "unknown");
 
-        console.log("WhatsApp connection closed:", statusCode);
-
-        if (shouldReconnect) {
-          setTimeout(startWhatsApp, 5000);
+        if (statusCode !== DisconnectReason.loggedOut) {
+          setTimeout(() => {
+            isStarting = false;
+            startWhatsApp();
+          }, 5000);
         } else {
+          currentQR = null;
           console.log(
-            "WhatsApp logout ta'e. Auth state qulqulleessuun QR haaraa scan godhi."
+            "WhatsApp logged out. Remove saved session and reconnect."
           );
         }
       }
@@ -714,92 +416,242 @@ async function startWhatsApp() {
         try {
           await handleMessage(message);
         } catch (error) {
-          console.error("Message handling error:", error);
-
-          try {
-            await sendMessage(
-              message.key.remoteJid,
-              "Dhiifama, ergaa kee irratti dogoggorri uumame. Maaloo irra deebi'i."
-            );
-          } catch (sendError) {
-            console.error("Error reply failed:", sendError);
-          }
+          console.error("Message handling error:", error.message);
         }
       }
     });
+
   } catch (error) {
-    console.error("WhatsApp startup error:", error);
-    setTimeout(startWhatsApp, 10000);
+    console.error("WhatsApp startup error:", error.message);
+
+    setTimeout(() => {
+      isStarting = false;
+      startWhatsApp();
+    }, 10000);
+
+    return;
   }
+
+  isStarting = false;
 }
 
-// ==========================================
-// HEALTH CHECK
-// ==========================================
+/* =========================
+   WEBSITE HOME PAGE
+========================= */
 
 app.get("/", (req, res) => {
-  res.send(`
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Hidaayatul-Bayaan</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 40px 15px;
-            background: #f0f8f3;
-            color: #176b45;
-          }
-          .card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            max-width: 450px;
-            margin: auto;
-            box-shadow: 0 3px 15px #0001;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>🕌 Hidaayatul-Bayaan</h1>
-          <p>Seenaa Nabiyyii Muhammad (SAW) fi Sahabootaa</p>
-          <p>Server: 🟢 Running</p>
-          <p>WhatsApp: ${
-            isWhatsAppConnected ? "🟢 Connected" : "🟠 Connecting"
-          }</p>
-        </div>
-      </body>
-    </html>
-  `);
+  res.send(`<!DOCTYPE html>
+<html lang="om">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#087443">
+  <title>Hidaayatul-Bayaan</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f0f7f3;
+      color: #183c2c;
+      text-align: center;
+    }
+    .card {
+      max-width: 520px;
+      margin: 30px auto;
+      background: white;
+      padding: 25px;
+      border-radius: 18px;
+      box-shadow: 0 5px 25px #00000012;
+    }
+    h1 { color: #087443; }
+    .status {
+      padding: 12px;
+      margin: 12px 0;
+      border-radius: 10px;
+      background: #f1f7f3;
+      overflow-wrap: anywhere;
+    }
+    #whatsappQR {
+      display: none;
+      width: 280px;
+      max-width: 100%;
+      margin: 15px auto;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+    }
+    .hint {
+      line-height: 1.7;
+      color: #456354;
+      font-size: 14px;
+    }
+    .warning {
+      color: #925900;
+      background: #fff5db;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🌿 Hidaayatul-Bayaan</h1>
+    <p>Seenaa Nabiyyii Muhammad ﷺ fi Seenaa Sahabootaa</p>
+
+    <div class="status" id="serverStatus">
+      Server: 🟢 Running
+    </div>
+
+    <div class="status" id="whatsappStatus">
+      WhatsApp: 🟠 Connecting...
+    </div>
+
+    <hr>
+
+    <h2>📱 WhatsApp Walqabsiisi</h2>
+    <p id="qrStatus">QR Code barbaadaa jira...</p>
+
+    <img id="whatsappQR" alt="WhatsApp QR Code">
+
+    <div class="hint" id="instructions">
+      WhatsApp kee bani → Settings ykn menu ⋮ → Linked Devices
+      → Link a Device → QR Code scan godhi.
+    </div>
+
+    <p class="warning">
+      ⚠️ QR Code kana namoota hin amanneef hin agarsiisin.
+      Namni QR kana scan godhu WhatsApp bot kana walqabsiisuu danda'a.
+    </p>
+  </div>
+
+  <script>
+    async function loadStatus() {
+      try {
+        const response = await fetch("/api/status");
+        const data = await response.json();
+
+        document.getElementById("serverStatus").textContent =
+          "Server: 🟢 Running";
+
+        document.getElementById("whatsappStatus").textContent =
+          data.whatsappConnected
+            ? "WhatsApp: 🟢 Connected"
+            : "WhatsApp: 🟠 Connecting";
+      } catch (error) {
+        document.getElementById("serverStatus").textContent =
+          "Server: 🔴 Error";
+      }
+    }
+
+    async function loadQR() {
+      const status = document.getElementById("qrStatus");
+      const image = document.getElementById("whatsappQR");
+
+      try {
+        const response = await fetch("/api/whatsapp/qr");
+        const data = await response.json();
+
+        if (data.connected) {
+          status.textContent = "✅ WhatsApp walqabateera!";
+          image.style.display = "none";
+          return;
+        }
+
+        if (data.qrReady && data.qr) {
+          image.src = data.qr;
+          image.style.display = "block";
+          status.textContent =
+            "QR Code kana WhatsApp kee irraa scan godhi.";
+        } else {
+          image.style.display = "none";
+          status.textContent =
+            data.message || "QR Code ammallee hin uumamne. Eegi...";
+        }
+      } catch (error) {
+        status.textContent =
+          "QR argachuun hin danda'amne. Xiqqoo booda irra deebi'i.";
+      }
+    }
+
+    loadStatus();
+    loadQR();
+
+    setInterval(loadStatus, 5000);
+    setInterval(loadQR, 3000);
+  </script>
+</body>
+</html>`);
 });
+
+/* =========================
+   QR API
+========================= */
+
+app.get("/api/whatsapp/qr", async (req, res) => {
+  try {
+    if (isWhatsAppConnected) {
+      return res.json({
+        connected: true,
+        qrReady: false,
+        message: "WhatsApp duraan walqabateera."
+      });
+    }
+
+    if (!currentQR) {
+      return res.status(202).json({
+        connected: false,
+        qrReady: false,
+        message: "QR Code ammallee hin uumamne. Xiqqoo eegi."
+      });
+    }
+
+    const qrImage = await QRCode.toDataURL(currentQR);
+
+    return res.json({
+      connected: false,
+      qrReady: true,
+      qr: qrImage,
+      message: "QR Code kana scan godhi."
+    });
+  } catch (error) {
+    console.error("QR generation error:", error.message);
+
+    return res.status(500).json({
+      error: "QR Code uumuu hin dandeenye."
+    });
+  }
+});
+
+/* =========================
+   HEALTH & STATUS
+========================= */
 
 app.get("/health", (req, res) => {
   res.json({
-    status: "ok",
+    ok: true,
     app: "Hidaayatul-Bayaan",
-    whatsapp: isWhatsAppConnected ? "connected" : "disconnected",
-    time: new Date().toISOString()
+    server: "running",
+    whatsappConnected: isWhatsAppConnected
   });
 });
 
 app.get("/api/status", (req, res) => {
   res.json({
     app: "Hidaayatul-Bayaan",
+    serverRunning: true,
     whatsappConnected: isWhatsAppConnected,
-    prophetStories: SEENAA_NABIYYII.length,
-    sahabaStories: SEENAA_SAHABOOTAA.length
+    qrReady: Boolean(currentQR),
+    time: new Date().toISOString()
   });
 });
 
-// ==========================================
-// START SERVER
-// ==========================================
+/* =========================
+   START SERVER
+========================= */
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Hidaayatul-Bayaan server running on port ${PORT}`);
+  console.log("Hidaayatul-Bayaan running on port " + PORT);
+  startWhatsApp();
 });
-
-startWhatsApp();
