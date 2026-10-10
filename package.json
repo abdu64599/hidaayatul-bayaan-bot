@@ -1,20 +1,19 @@
 {
-"name": "hidaayatul-bayaan",
-"version": "1.1.2",
-"description": "Hidaayatul-Bayaan WhatsApp Bot - Seenaa Nabiyyii fi Sahabootaa",
-"main": "server.js",
-"scripts": {
-"start": "node server.js",
-"audit": "npm audit"
-},
-"engines": {
-"node": "20.x"
-},
-"dependencies": {
-"@whiskeysockets/baileys": "6.7.18",
-"express": "^4.21.2",
-"pino": "^9.6.0",
-"qrcode": "^1.5.4",
-"pg": "^8.16.3"
-}
+  "name": "hidaayatul-bayaan",
+  "version": "1.2.0",
+  "description": "Hidaayatul-Bayaan WhatsApp Bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.24",
+    "express": "^4.21.2",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "pg": "^8.16.3"
+  }
 }
