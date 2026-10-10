@@ -392,58 +392,70 @@ async function getExam(code) {
 
   return result.rows[0];
 }
-
 // ========================================
-// 12. HANDLE INCOMING MESSAGES
+// INCOMING MESSAGES — DEBUG VERSION
 // ========================================
 
-async function handleMessage(msg) {
-  try {
-    if (!msg || !msg.message || msg.key?.fromMe) {
-      return;
+newSock.ev.on("messages.upsert", async (event) => {
+  if (sock !== newSock) {
+    console.log("MESSAGE SKIPPED: socket durii");
+    return;
+  }
+
+  const messages = event?.messages || [];
+  const type = event?.type || "unknown";
+
+  console.log(
+    "MESSAGE EVENT:",
+    type,
+    "Count:",
+    messages.length
+  );
+
+  for (const msg of messages) {
+    try {
+      console.log("MESSAGE RAW:", JSON.stringify({
+        id: msg?.key?.id,
+        from: msg?.key?.remoteJid,
+        fromMe: msg?.key?.fromMe,
+        hasMessage: Boolean(msg?.message),
+        messageTypes: Object.keys(msg?.message || {})
+      }));
+
+      if (type !== "notify" && type !== "append") {
+        console.log("MESSAGE SKIPPED: type", type);
+        continue;
+      }
+
+      if (!msg?.message) {
+        console.log("MESSAGE SKIPPED: message hin jiru");
+        continue;
+      }
+
+      if (msg.key?.fromMe) {
+        console.log("MESSAGE SKIPPED: ergaa ofii");
+        continue;
+      }
+
+      const text = extractMessageText(msg.message);
+
+      console.log(
+        "MESSAGE EXTRACTED TEXT:",
+        text || "(barruun hin argamne)"
+      );
+
+      await handleMessage(msg);
+
+      console.log("MESSAGE HANDLING FINISHED:", msg.key?.id);
+
+    } catch (error) {
+      console.error(
+        "MESSAGE HANDLER ERROR:",
+        error.stack || error
+      );
     }
-
-    const jid = msg.key?.remoteJid || "";
-
-    if (!jid) return;
-
-    if (jid === "status@broadcast") return;
-
-    if (jid.endsWith("@g.us")) return;
-
-    if (jid.endsWith("@broadcast")) return;
-
-    const phone = normalizePhone(jid);
-
-    if (!phone) return;
-
-    const messageId = msg.key?.id;
-
-    if (rememberMessage(messageId)) {
-      console.log("Ergaa irra deddeebi'ame dhiifame.");
-      return;
-    }
-
-    const text = extractMessageText(msg.message);
-
-    if (!text) {
-      console.log("Ergaa barruu hin qabne irraa dhufe:", jid);
-      return;
-    }
-
-    const pushName = msg.pushName || "";
-
-    console.log("ERGAAN HAARAA:", {
-      from: jid,
-      text: text.slice(0, 100)
-    });
-
-    await saveUser(phone, pushName);
-
-    const normalized = text
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, " ");
+  }
+});
 
     // ====================================
     // GREETING AND MENU
