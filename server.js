@@ -18,13 +18,11 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 // ========================================
-// CONFIGURATION
+// 1. CONFIGURATION
 // ========================================
 
 const PORT = process.env.PORT || 10000;
-
 const DATABASE_URL = process.env.DATABASE_URL;
-
 const ADMIN_CODE = process.env.ADMIN_CODE || "";
 
 const AUTH_DIR =
@@ -37,7 +35,7 @@ if (!DATABASE_URL) {
 }
 
 // ========================================
-// DATABASE CONNECTION
+// 2. DATABASE CONNECTION
 // ========================================
 
 const pool = new Pool({
@@ -49,9 +47,7 @@ const pool = new Pool({
       : { rejectUnauthorized: false },
 
   family: 4,
-
   connectionTimeoutMillis: 15000,
-
   idleTimeoutMillis: 30000
 });
 
@@ -60,20 +56,22 @@ pool.on("error", (error) => {
 });
 
 // ========================================
-// WHATSAPP VARIABLES
+// 3. WHATSAPP VARIABLES
 // ========================================
 
 let sock = null;
 let latestQR = null;
 let connected = false;
 let starting = false;
-
+let loggedOut = false;
 let reconnectTimer = null;
+let shuttingDown = false;
 
 const seenMessages = new Set();
+const MAX_SEEN_MESSAGES = 2000;
 
 // ========================================
-// DATABASE INITIALIZATION
+// 4. DATABASE INITIALIZATION
 // ========================================
 
 async function initDB() {
@@ -112,13 +110,13 @@ async function initDB() {
 }
 
 // ========================================
-// HELPER FUNCTIONS
+// 5. HELPER FUNCTIONS
 // ========================================
 
 function normalizePhone(jid) {
   if (!jid) return "";
 
-  return jid
+  return String(jid)
     .split("@")[0]
     .split(":")[0]
     .replace(/\D/g, "");
@@ -133,6 +131,74 @@ function randomCode() {
       .toUpperCase()
   );
 }
+
+function rememberMessage(id) {
+  if (!id) return false;
+
+  if (seenMessages.has(id)) {
+    return true;
+  }
+
+  seenMessages.add(id);
+
+  if (seenMessages.size > MAX_SEEN_MESSAGES) {
+    const first = seenMessages.values().next().value;
+    seenMessages.delete(first);
+  }
+
+  return false;
+}
+
+// ========================================
+// 6. WHATSAPP MESSAGE TEXT EXTRACTOR
+// ========================================
+
+function extractMessageText(message) {
+  if (!message) return "";
+
+  let msg = message;
+
+  // Ergaa WhatsApp marfame hiikuu
+  for (let i = 0; i < 5; i++) {
+    if (msg.ephemeralMessage?.message) {
+      msg = msg.ephemeralMessage.message;
+      continue;
+    }
+
+    if (msg.viewOnceMessage?.message) {
+      msg = msg.viewOnceMessage.message;
+      continue;
+    }
+
+    if (msg.viewOnceMessageV2?.message) {
+      msg = msg.viewOnceMessageV2.message;
+      continue;
+    }
+
+    if (msg.documentWithCaptionMessage?.message) {
+      msg = msg.documentWithCaptionMessage.message;
+      continue;
+    }
+
+    break;
+  }
+
+  return (
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    msg.documentMessage?.caption ||
+    msg.buttonsResponseMessage?.selectedButtonId ||
+    msg.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    msg.templateButtonReplyMessage?.selectedId ||
+    ""
+  ).trim();
+}
+
+// ========================================
+// 7. MAIN MENU
+// ========================================
 
 function menu() {
   return `📚 *HIDAAYATUL-BAYAAN*
@@ -163,7 +229,7 @@ gaaffii kee guutuu barreessi.`;
 }
 
 // ========================================
-// ISLAMIC LESSONS
+// 8. ISLAMIC LESSONS
 // ========================================
 
 const lessons = {
@@ -249,13 +315,13 @@ Fakkeenya:
 - Malaaykaan wahyii fidu eenyu?
 - Utubaaleen Iimaanaa meeqa?
 
-Deebiin ani kennu odeeffannoo waliigalaa barnoota Islaamaa irratti hundaa'a.
+Deebiin ani kennu odeeffannoo barnootaa dursee qophaa'e irratti hundaa'a.
 
-Dhimma fatwaa murteessaa irratti hayyuu amanamaa gaafadhu.`
+Gaaffii fatwaa murteessaa irratti hayyuu amanamaa gaafadhu.`
 };
 
 // ========================================
-// SAVE USER
+// 9. SAVE USER
 // ========================================
 
 async function saveUser(phone, name) {
@@ -279,26 +345,39 @@ async function saveUser(phone, name) {
 }
 
 // ========================================
-// SEND WHATSAPP MESSAGE
+// 10. SEND WHATSAPP MESSAGE
 // ========================================
 
 async function sendText(jid, text) {
   if (!sock || !connected) {
-    console.log("WhatsApp hin wal qabanne.");
-    return;
+    console.error(
+      "SEND ERROR: WhatsApp hin walqabanne.",
+      jid
+    );
+
+    return false;
   }
 
   try {
     await sock.sendMessage(jid, {
-      text
+      text: String(text)
     });
+
+    console.log("SEND SUCCESS:", jid);
+
+    return true;
   } catch (error) {
-    console.error("SEND MESSAGE ERROR:", error.message);
+    console.error(
+      "SEND MESSAGE ERROR:",
+      error.stack || error
+    );
+
+    return false;
   }
 }
 
 // ========================================
-// GET EXAM
+// 11. GET EXAM
 // ========================================
 
 async function getExam(code) {
@@ -315,65 +394,60 @@ async function getExam(code) {
 }
 
 // ========================================
-// HANDLE INCOMING MESSAGES
+// 12. HANDLE INCOMING MESSAGES
 // ========================================
 
 async function handleMessage(msg) {
-  if (!msg || !msg.message || msg.key.fromMe) {
-    return;
-  }
-
-  const jid = msg.key.remoteJid || "";
-
-  if (!jid) return;
-
-  if (jid === "status@broadcast") return;
-
-  if (jid.endsWith("@g.us")) return;
-
-  if (jid.endsWith("@broadcast")) return;
-
-  const phone = normalizePhone(jid);
-
-  if (!phone) return;
-
-  const messageId = msg.key.id;
-
-  if (messageId && seenMessages.has(messageId)) {
-    return;
-  }
-
-  if (messageId) {
-    seenMessages.add(messageId);
-
-    if (seenMessages.size > 2000) {
-      const firstItems = Array.from(seenMessages).slice(0, 1000);
-
-      for (const item of firstItems) {
-        seenMessages.delete(item);
-      }
-    }
-  }
-
-  const content =
-    msg.message.conversation ||
-    msg.message.extendedTextMessage?.text ||
-    msg.message.imageMessage?.caption ||
-    msg.message.videoMessage?.caption ||
-    "";
-
-  const text = content.trim();
-
-  if (!text) return;
-
-  const pushName = msg.pushName || "";
-
   try {
+    if (!msg || !msg.message || msg.key?.fromMe) {
+      return;
+    }
+
+    const jid = msg.key?.remoteJid || "";
+
+    if (!jid) return;
+
+    if (jid === "status@broadcast") return;
+
+    if (jid.endsWith("@g.us")) return;
+
+    if (jid.endsWith("@broadcast")) return;
+
+    const phone = normalizePhone(jid);
+
+    if (!phone) return;
+
+    const messageId = msg.key?.id;
+
+    if (rememberMessage(messageId)) {
+      console.log("Ergaa irra deddeebi'ame dhiifame.");
+      return;
+    }
+
+    const text = extractMessageText(msg.message);
+
+    if (!text) {
+      console.log("Ergaa barruu hin qabne irraa dhufe:", jid);
+      return;
+    }
+
+    const pushName = msg.pushName || "";
+
+    console.log("ERGAAN HAARAA:", {
+      from: jid,
+      text: text.slice(0, 100)
+    });
+
     await saveUser(phone, pushName);
 
-    const normalized = text.toLowerCase();
+    const normalized = text
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ");
 
-    // MENU
+    // ====================================
+    // GREETING AND MENU
+    // ====================================
 
     if (
       [
@@ -382,22 +456,33 @@ async function handleMessage(msg) {
         "hi",
         "hello",
         "salaam",
-        "assalaamu alaykum"
+        "assalaamu alaykum",
+        "assalamu alaikum",
+        "as salaamu alaykum",
+        "akkam",
+        "akkam jirtu",
+        "akkam jirta"
       ].includes(normalized)
     ) {
-      return sendText(jid, menu());
+      await sendText(jid, menu());
+      return;
     }
 
-    // LESSONS
+    // ====================================
+    // ISLAMIC LESSONS
+    // ====================================
 
-    if (lessons[text]) {
-      return sendText(jid, lessons[text]);
+    if (lessons[text.trim()]) {
+      await sendText(jid, lessons[text.trim()]);
+      return;
     }
 
+    // ====================================
     // TEACHER INSTRUCTIONS
+    // ====================================
 
     if (normalized === "7") {
-      return sendText(
+      await sendText(
         jid,
         `👨‍🏫 *QAJEELFAMA BARSIISAA*
 
@@ -411,16 +496,21 @@ Headers:
 
 x-admin-code: KOOODA_ICCITII
 
-Qormaata keessatti:
+Body JSON keessatti:
 
-- Maqaa qormaataa
-- Mata-duree
-- Lakkoofsa bilbilaa barsiisaa
-- Gaaffilee
-- Filannoowwan A, B, C, D
-- Deebii sirrii
+- title
+- subject
+- teacher_phone
+- questions
 
 galchuu qaba.
+
+Gaaffiin tokkoon tokkoon isaa:
+- question
+- options 4
+- answer (A, B, C ykn D)
+
+qabaachuu qaba.
 
 Qormaata erga uume booda koodii qormaataa argata.
 
@@ -430,16 +520,20 @@ Barattoonni WhatsApp irratti:
 
 erga jedhuun qormaata fudhachuu danda'u.`
       );
+
+      return;
     }
 
+    // ====================================
     // TAKE EXAM MENU
+    // ====================================
 
     if (normalized === "5") {
-      return sendText(
+      await sendText(
         jid,
         `📝 *QORMAATA FUDHADHU*
 
-Koodii qormaataa qabaadhu.
+Koodii qormaataa barsiisaa irraa argadhu.
 
 Achiin booda akkana ergi:
 
@@ -447,12 +541,16 @@ Achiin booda akkana ergi:
 
 HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
       );
+
+      return;
     }
 
+    // ====================================
     // REQUEST EXAM
+    // ====================================
 
     const examMatch = text.match(
-      /^5\s+([A-Za-z0-9_-]+)$/
+      /^5\s+([A-Za-z0-9_-]+)$/i
     );
 
     if (examMatch) {
@@ -461,10 +559,12 @@ HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
       const exam = await getExam(code);
 
       if (!exam) {
-        return sendText(
+        await sendText(
           jid,
           "❌ Koodiin qormaataa hin argamne. Maaloo koodii sirrii ta'e mirkaneessi."
         );
+
+        return;
       }
 
       const questions = exam.questions;
@@ -473,13 +573,15 @@ HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
         !Array.isArray(questions) ||
         questions.length === 0
       ) {
-        return sendText(
+        await sendText(
           jid,
           "❌ Qormaata kana keessatti gaaffiin hin jiru."
         );
+
+        return;
       }
 
-      let output = `📝 *${exam.title}*\n`;
+      let output = `📝 *${exam.title}*\n\n`;
 
       output += `Mata-duree: ${exam.subject}\n`;
       output += `Koodii: ${exam.code}\n`;
@@ -495,14 +597,17 @@ HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
         output += "\n";
       });
 
-      output += `Deebii kee akkana ergi:\n`;
+      output += "Deebii kee akkana ergi:\n";
       output += `${exam.code} A,B,C,A\n\n`;
-      output += "Deebiiwwan kee hundaa sirriitti galchi.";
+      output += "Deebiiwwan gaaffilee hunda sirriitti galchi.";
 
-      return sendText(jid, output);
+      await sendText(jid, output);
+      return;
     }
 
+    // ====================================
     // SUBMIT EXAM ANSWERS
+    // ====================================
 
     const answerMatch = text.match(
       /^([A-Za-z0-9_-]+)\s+([A-Da-d](?:\s*[, ]\s*[A-Da-d])*)$/
@@ -519,10 +624,12 @@ HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
       const exam = await getExam(code);
 
       if (!exam) {
-        return sendText(
+        await sendText(
           jid,
           "❌ Koodiin qormaataa hin argamne."
         );
+
+        return;
       }
 
       const questions = exam.questions;
@@ -531,14 +638,16 @@ HB123ABC bakka koodii qormaataa keetiin jijjiiri.`
         !Array.isArray(questions) ||
         questions.length === 0
       ) {
-        return sendText(
+        await sendText(
           jid,
           "❌ Qormaata kana keessatti gaaffiin hin jiru."
         );
+
+        return;
       }
 
       if (answers.length !== questions.length) {
-        return sendText(
+        await sendText(
           jid,
           `❌ Gaaffilee ${questions.length} jiru.
 
@@ -549,10 +658,11 @@ Maaloo deebii gaaffilee hunda ergi.
 Fakkeenya:
 ${code} A,B,C,D`
         );
+
+        return;
       }
 
       let score = 0;
-
       const details = [];
 
       questions.forEach((q, index) => {
@@ -631,10 +741,13 @@ ${code} A,B,C,D`
       resultMessage += "\nJabaadhu! Barnoota kee itti fufi.\n\n";
       resultMessage += "Qabxiiwwan kee ilaaluuf 6 ergi.";
 
-      return sendText(jid, resultMessage);
+      await sendText(jid, resultMessage);
+      return;
     }
 
+    // ====================================
     // STUDENT RESULTS
+    // ====================================
 
     if (normalized === "6") {
       const result = await pool.query(
@@ -654,10 +767,12 @@ ${code} A,B,C,D`
       );
 
       if (result.rows.length === 0) {
-        return sendText(
+        await sendText(
           jid,
           "📊 Qabxiin hin argamne. Dura qormaata fudhadhu."
         );
+
+        return;
       }
 
       let output = "📊 *QABXII KEE*\n\n";
@@ -669,21 +784,21 @@ ${code} A,B,C,D`
             : 0;
 
         output += `${index + 1}. ${r.exam_code}\n`;
-
         output += `Qabxii: ${r.score}/${r.total}\n`;
-
         output += `Dhibbeentaa: ${percentage}%\n`;
-
         output +=
           `Guyyaa: ${new Date(r.created_at).toLocaleDateString("en-GB")}\n\n`;
       });
 
-      return sendText(jid, output);
+      await sendText(jid, output);
+      return;
     }
 
+    // ====================================
     // DEFAULT RESPONSE
+    // ====================================
 
-    return sendText(
+    await sendText(
       jid,
       `Ergaa kee sirriitti hin hubanne.
 
@@ -693,22 +808,51 @@ Gaaffii barnootaa kee guutuu barreessuu dandeessa.`
     );
 
   } catch (error) {
-    console.error("MESSAGE ERROR:", error);
-
-    await sendText(
-      jid,
-      "Rakkoon uumameera. Mee yeroo muraasa booda irra deebi'i."
+    console.error(
+      "MESSAGE ERROR:",
+      error.stack || error
     );
+
+    const jid = msg?.key?.remoteJid;
+
+    if (jid && connected) {
+      await sendText(
+        jid,
+        "Rakkoon uumameera. Mee yeroo muraasa booda irra deebi'i."
+      );
+    }
   }
 }
 
 // ========================================
-// START WHATSAPP
+// 13. WHATSAPP RECONNECT
+// ========================================
+
+function scheduleReconnect(delay = 5000) {
+  if (shuttingDown || loggedOut) return;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+  }
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+
+    startWhatsApp().catch((error) => {
+      console.error(
+        "RECONNECT ERROR:",
+        error.stack || error
+      );
+    });
+  }, delay);
+}
+
+// ========================================
+// 14. START WHATSAPP
 // ========================================
 
 async function startWhatsApp() {
-  if (starting) {
-    console.log("WhatsApp duraan jalqabsiifamaa jira.");
+  if (starting || shuttingDown || loggedOut) {
     return;
   }
 
@@ -740,11 +884,11 @@ async function startWhatsApp() {
 
     } catch (error) {
       console.log(
-        "WhatsApp version argachuu hin dandeenye; version duraanii fayyadama."
+        "WhatsApp version haaraa argachuu hin dandeenye."
       );
     }
 
-    sock = makeWASocket({
+    const newSock = makeWASocket({
       auth: state,
 
       ...(version ? { version } : {}),
@@ -766,18 +910,31 @@ async function startWhatsApp() {
       markOnlineOnConnect: false
     });
 
-    sock.ev.on("creds.update", saveCreds);
+    sock = newSock;
 
+    newSock.ev.on("creds.update", saveCreds);
+
+    // ==================================
     // CONNECTION EVENTS
+    // ==================================
 
-    sock.ev.on(
+    newSock.ev.on(
       "connection.update",
       async (update) => {
+        // Socket durii irraa event yoo dhufe
+        // socket haaraa irratti hin hojjennu.
+        if (sock !== newSock) return;
+
         const {
           connection,
           lastDisconnect,
           qr
         } = update;
+
+        console.log(
+          "WHATSAPP CONNECTION:",
+          connection || "update"
+        );
 
         // QR CODE
 
@@ -803,10 +960,9 @@ async function startWhatsApp() {
 
         if (connection === "open") {
           connected = true;
-
           latestQR = null;
-
           starting = false;
+          loggedOut = false;
 
           console.log(
             "WhatsApp wal qabateera!"
@@ -817,69 +973,61 @@ async function startWhatsApp() {
 
         if (connection === "close") {
           connected = false;
-
           latestQR = null;
-
           starting = false;
 
           const status =
             lastDisconnect?.error?.output?.statusCode;
 
-          if (
-            status === DisconnectReason.loggedOut
-          ) {
-            console.log(
-              "WhatsApp logout ta'e."
-            );
+          console.error(
+            "WhatsApp irraa citeera. Status:",
+            status || "hin beekamne"
+          );
 
-            console.log(
-              "Session haaraa uumuuf WhatsApp irra deebi'ii link godhi."
+          if (status === DisconnectReason.loggedOut) {
+            loggedOut = true;
+
+            console.error(
+              "WhatsApp logout ta'e. QR haaraa scan gochuun barbaachisaa ta'uu danda'a."
             );
 
             return;
           }
 
-          console.log(
-            "WhatsApp irraa citeera."
-          );
-
-          console.log(
-            "Sekondii 5 booda irra deebi'ee yaala."
-          );
-
-          if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-          }
-
-          reconnectTimer = setTimeout(() => {
-            startWhatsApp().catch((error) => {
-              console.error(
-                "RECONNECT ERROR:",
-                error
-              );
-            });
-          }, 5000);
+          scheduleReconnect(5000);
         }
       }
     );
 
+    // ==================================
     // INCOMING MESSAGES
+    // ==================================
 
-    sock.ev.on(
+    newSock.ev.on(
       "messages.upsert",
       async ({ messages, type }) => {
-        if (type !== "notify") {
+        if (sock !== newSock) return;
+
+        console.log(
+          "MESSAGE EVENT:",
+          type,
+          "Count:",
+          messages?.length || 0
+        );
+
+        // notify fi append irraa ergaa fudhanna.
+        // seenMessages ergaa irra deddeebi'ame ittisa.
+        if (!["notify", "append"].includes(type)) {
           return;
         }
 
-        for (const msg of messages) {
+        for (const msg of messages || []) {
           try {
             await handleMessage(msg);
-
           } catch (error) {
             console.error(
               "MESSAGE HANDLER ERROR:",
-              error
+              error.stack || error
             );
           }
         }
@@ -893,39 +1041,25 @@ async function startWhatsApp() {
   } catch (error) {
     console.error(
       "WHATSAPP START ERROR:",
-      error
+      error.stack || error
     );
 
     connected = false;
-
     latestQR = null;
-
     starting = false;
 
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-    }
-
-    reconnectTimer = setTimeout(() => {
-      startWhatsApp().catch((err) => {
-        console.error(
-          "WHATSAPP RETRY ERROR:",
-          err
-        );
-      });
-    }, 10000);
+    scheduleReconnect(10000);
   }
 }
 
 // ========================================
-// HOME PAGE
+// 15. HOME PAGE
 // ========================================
 
 app.get("/", (req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html lang="om">
-
 <head>
   <meta charset="UTF-8">
 
@@ -1000,17 +1134,13 @@ app.get("/", (req, res) => {
 </head>
 
 <body>
-
   <div class="card">
-
     <h1>📚 Hidaayatul-Bayaan</h1>
 
     <p>Barnoota Islaamaa fi Qormaata</p>
 
     <div class="status">
-      <p id="status">
-        Haala WhatsApp ilaalaa...
-      </p>
+      <p id="status">Haala WhatsApp ilaalaa...</p>
     </div>
 
     <img
@@ -1034,29 +1164,20 @@ app.get("/", (req, res) => {
     <p class="small">
       QR code kee nama biraatti hin qoodin.
     </p>
-
   </div>
 
   <script>
     async function loadStatus() {
       try {
         const response = await fetch("/api/status");
-
         const data = await response.json();
 
-        const status =
-          document.getElementById("status");
-
-        const qr =
-          document.getElementById("qr");
-
-        const message =
-          document.getElementById("message");
+        const status = document.getElementById("status");
+        const qr = document.getElementById("qr");
+        const message = document.getElementById("message");
 
         if (data.connected) {
-          status.textContent =
-            "✅ WhatsApp wal qabateera";
-
+          status.textContent = "✅ WhatsApp wal qabateera";
           qr.style.display = "none";
 
           message.textContent =
@@ -1068,7 +1189,6 @@ app.get("/", (req, res) => {
 
           if (data.qr) {
             qr.src = data.qr;
-
             qr.style.display = "block";
 
             message.textContent =
@@ -1083,60 +1203,60 @@ app.get("/", (req, res) => {
         }
 
       } catch (error) {
-        document.getElementById("status")
-          .textContent =
+        document.getElementById("status").textContent =
           "Rakkoo walqunnamtii. Irra deebi'ii yaali.";
       }
     }
 
     loadStatus();
-
     setInterval(loadStatus, 5000);
   </script>
-
 </body>
-
 </html>
   `);
 });
 
 // ========================================
-// HEALTH CHECK
+// 16. HEALTH CHECK
 // ========================================
 
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
+app.get("/health", async (req, res) => {
+  let database = "connected";
+
+  try {
+    await pool.query("SELECT 1");
+  } catch (error) {
+    database = "disconnected";
+  }
+
+  res.status(database === "connected" ? 200 : 503).json({
+    ok: database === "connected",
     app: "Hidaayatul-Bayaan",
-    whatsapp: connected
-      ? "connected"
-      : "disconnected"
+    database,
+    whatsapp: connected ? "connected" : "disconnected"
   });
 });
 
 // ========================================
-// WHATSAPP STATUS
+// 17. WHATSAPP STATUS
 // ========================================
 
 app.get("/api/status", (req, res) => {
   res.json({
     ok: true,
     connected,
-    qr: latestQR
+    qr: connected ? null : latestQR
   });
 });
 
 // ========================================
-// CREATE EXAM
+// 18. CREATE EXAM
 // ========================================
 
 app.post("/api/exams", async (req, res) => {
   const adminCode = req.headers["x-admin-code"];
 
-  if (
-    !ADMIN_CODE ||
-    adminCode !== ADMIN_CODE
-  ) {
+  if (!ADMIN_CODE || adminCode !== ADMIN_CODE) {
     return res.status(401).json({
       ok: false,
       error:
@@ -1149,7 +1269,7 @@ app.post("/api/exams", async (req, res) => {
     subject,
     teacher_phone,
     questions
-  } = req.body;
+  } = req.body || {};
 
   if (
     typeof title !== "string" ||
@@ -1198,15 +1318,21 @@ app.post("/api/exams", async (req, res) => {
       code = randomCode();
 
       exists = await pool.query(
-        `
-        SELECT 1
-        FROM bot_exams
-        WHERE code = $1
-        `,
+        "SELECT 1 FROM bot_exams WHERE code = $1",
         [code]
       );
 
     } while (exists.rowCount > 0);
+
+    const cleanQuestions = questions.map((q) => ({
+      question: q.question.trim(),
+
+      options: q.options.map(
+        (option) => option.trim()
+      ),
+
+      answer: String(q.answer).toUpperCase()
+    }));
 
     await pool.query(
       `
@@ -1222,19 +1348,11 @@ app.post("/api/exams", async (req, res) => {
       [
         code,
         title.trim(),
-        subject || "Islaamaa",
+        typeof subject === "string" && subject.trim()
+          ? subject.trim()
+          : "Islaamaa",
         normalizePhone(teacher_phone),
-        JSON.stringify(
-          questions.map((q) => ({
-            question: q.question.trim(),
-
-            options: q.options.map(
-              (option) => option.trim()
-            ),
-
-            answer: String(q.answer).toUpperCase()
-          }))
-        )
+        JSON.stringify(cleanQuestions)
       ]
     );
 
@@ -1242,33 +1360,29 @@ app.post("/api/exams", async (req, res) => {
       ok: true,
       code,
       message: "Qormaanni uumameera.",
-      student_instruction:
-        `WhatsApp irratti 5 ${code} ergaa.`
+      student_instruction: `WhatsApp irratti 5 ${code} ergaa.`
     });
 
   } catch (error) {
     console.error(
       "CREATE EXAM ERROR:",
-      error
+      error.stack || error
     );
 
     return res.status(500).json({
       ok: false,
-      error:
-        "Qormaata uumuu hin dandeenye."
+      error: "Qormaata uumuu hin dandeenye."
     });
   }
 });
 
 // ========================================
-// GET EXAM WITHOUT ANSWERS
+// 19. GET EXAM WITHOUT ANSWERS
 // ========================================
 
 app.get("/api/exams/:code", async (req, res) => {
   try {
-    const exam = await getExam(
-      req.params.code
-    );
+    const exam = await getExam(req.params.code);
 
     if (!exam) {
       return res.status(404).json({
@@ -1296,7 +1410,7 @@ app.get("/api/exams/:code", async (req, res) => {
   } catch (error) {
     console.error(
       "GET EXAM ERROR:",
-      error
+      error.stack || error
     );
 
     return res.status(500).json({
@@ -1307,111 +1421,110 @@ app.get("/api/exams/:code", async (req, res) => {
 });
 
 // ========================================
-// GET EXAM RESULTS FOR TEACHER
+// 20. GET EXAM RESULTS FOR TEACHER
 // ========================================
 
-app.get(
-  "/api/exams/:code/results",
-  async (req, res) => {
-    const adminCode =
-      req.headers["x-admin-code"];
+app.get("/api/exams/:code/results", async (req, res) => {
+  const adminCode = req.headers["x-admin-code"];
 
-    if (
-      !ADMIN_CODE ||
-      adminCode !== ADMIN_CODE
-    ) {
-      return res.status(401).json({
-        ok: false,
-        error:
-          "Koodii barsiisaa sirrii galchi."
-      });
-    }
-
-    try {
-      const result = await pool.query(
-        `
-        SELECT
-          student_phone,
-          student_name,
-          score,
-          total,
-          created_at
-        FROM bot_results
-        WHERE exam_code = $1
-        ORDER BY score DESC, created_at ASC
-        `,
-        [
-          req.params.code.toUpperCase()
-        ]
-      );
-
-      return res.json({
-        ok: true,
-        results: result.rows
-      });
-
-    } catch (error) {
-      console.error(
-        "GET RESULTS ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        ok: false,
-        error:
-          "Bu'aa argachuu hin dandeenye."
-      });
-    }
+  if (!ADMIN_CODE || adminCode !== ADMIN_CODE) {
+    return res.status(401).json({
+      ok: false,
+      error: "Koodii barsiisaa sirrii galchi."
+    });
   }
-);
 
-// ========================================
-// START SERVER AND DATABASE
-// ========================================
-
-const server = app.listen(
-  PORT,
-  "0.0.0.0",
-  async () => {
-    console.log(
-      `Hidaayatul-Bayaan server port ${PORT} irratti jalqabe.`
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        student_phone,
+        student_name,
+        score,
+        total,
+        created_at
+      FROM bot_results
+      WHERE exam_code = $1
+      ORDER BY score DESC, created_at ASC
+      `,
+      [req.params.code.toUpperCase()]
     );
 
-    try {
-      await initDB();
+    return res.json({
+      ok: true,
+      results: result.rows
+    });
 
-      console.log(
-        "Database wal qabateera."
-      );
+  } catch (error) {
+    console.error(
+      "GET RESULTS ERROR:",
+      error.stack || error
+    );
 
-      startWhatsApp().catch((error) => {
-        console.error(
-          "WHATSAPP INITIAL START ERROR:",
-          error
-        );
-      });
-
-    } catch (error) {
-      console.error(
-        "DATABASE INITIALIZATION ERROR:",
-        error
-      );
-    }
+    return res.status(500).json({
+      ok: false,
+      error: "Bu'aa argachuu hin dandeenye."
+    });
   }
-);
+});
 
 // ========================================
-// GRACEFUL SHUTDOWN
+// 21. START SERVER AND DATABASE
 // ========================================
 
-async function shutdown() {
+const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(
-    "Server cufamaa jira..."
+    `Hidaayatul-Bayaan server port ${PORT} irratti jalqabe.`
   );
 
   try {
+    await initDB();
+
+    console.log("Database wal qabateera.");
+
+    startWhatsApp().catch((error) => {
+      console.error(
+        "WHATSAPP INITIAL START ERROR:",
+        error.stack || error
+      );
+    });
+
+  } catch (error) {
+    console.error(
+      "DATABASE INITIALIZATION ERROR:",
+      error.stack || error
+    );
+  }
+});
+
+// ========================================
+// 22. GRACEFUL SHUTDOWN
+// ========================================
+
+async function shutdown() {
+  if (shuttingDown) return;
+
+  shuttingDown = true;
+
+  console.log("Server cufamaa jira...");
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  try {
+    connected = false;
+
     if (sock) {
-      sock.end(undefined);
+      try {
+        sock.end(undefined);
+      } catch (error) {
+        console.error(
+          "WHATSAPP CLOSE ERROR:",
+          error.message
+        );
+      }
     }
 
     await pool.end();
@@ -1427,7 +1540,7 @@ async function shutdown() {
   } catch (error) {
     console.error(
       "SHUTDOWN ERROR:",
-      error
+      error.stack || error
     );
 
     process.exit(1);
@@ -1435,5 +1548,4 @@ async function shutdown() {
 }
 
 process.on("SIGTERM", shutdown);
-
 process.on("SIGINT", shutdown);
