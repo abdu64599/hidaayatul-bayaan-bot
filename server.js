@@ -19,14 +19,11 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 const DATABASE_URL = process.env.DATABASE_URL;
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 
 const logger = pino({ level: "warn" });
 
 if (!DATABASE_URL) {
-  console.error(
-    "ERROR: DATABASE_URL hin argamne. Render Environment ilaali."
-  );
+  console.error("DATABASE_URL Render Environment keessatti hin argamne.");
   process.exit(1);
 }
 
@@ -76,8 +73,7 @@ async function initializeDatabase() {
   `);
 
   databaseReady = true;
-
-  console.log("Database tables qophaa'aniiru.");
+  console.log("Database qophaa'eera.");
 }
 
 function encodeJSON(value) {
@@ -94,7 +90,7 @@ function decodeJSON(value) {
 }
 
 /* =========================
-   WHATSAPP AUTH IN DATABASE
+   WHATSAPP AUTH STATE
 ========================= */
 
 async function createDatabaseAuthState() {
@@ -118,14 +114,12 @@ async function createDatabaseAuthState() {
       ["main", encodeJSON(creds)]
     );
 
-    console.log("WhatsApp session haaraan qophaa'e.");
+    console.log("WhatsApp session haaraan uumame.");
   }
 
   const keys = {
     async get(type, ids) {
-      if (!ids || ids.length === 0) {
-        return {};
-      }
+      if (!ids || ids.length === 0) return {};
 
       const result = await pool.query(
         `SELECT key_id, data
@@ -141,9 +135,7 @@ async function createDatabaseAuthState() {
         let value = decodeJSON(row.data);
 
         if (type === "app-state-sync-key" && value) {
-          value = proto.Message.AppStateSyncKeyData.fromObject(
-            value
-          );
+          value = proto.Message.AppStateSyncKeyData.fromObject(value);
         }
 
         output[row.key_id] = value;
@@ -291,7 +283,7 @@ function mainMenu() {
 
 function prophetMenu() {
   return (
-    "📖 SEENAA NABIYYOotaa\n\n" +
+    "📖 SEENAA NABIYYOOTAA\n\n" +
     "Lakkoofsa filadhaa:\n\n" +
     "1️⃣ Nabii Aadam (AS)\n" +
     "2️⃣ Nabii Nuuh (AS)\n" +
@@ -313,7 +305,7 @@ function sahabaMenu() {
 }
 
 /* =========================
-   INCOMING MESSAGES
+   ERGAA WHATSAPP
 ========================= */
 
 async function handleIncomingMessage(message) {
@@ -332,7 +324,6 @@ async function handleIncomingMessage(message) {
   }
 
   const messageType = Object.keys(message.message)[0];
-
   let body = "";
 
   if (messageType === "conversation") {
@@ -409,7 +400,7 @@ async function handleIncomingMessage(message) {
   }
 
   if (!sock || !connected) {
-    console.log("WhatsApp hin walqabanne; ergaa erguun hin danda'amne.");
+    console.log("WhatsApp hin walqabanne.");
     return;
   }
 
@@ -462,11 +453,10 @@ async function startWhatsApp() {
         try {
           currentQR = await QRCode.toDataURL(qr);
           connected = false;
-
-          console.log("QR code qophaa'e. Website bani.");
+          console.log("QR Code qophaa'e.");
         } catch (error) {
           lastError = error.message;
-          console.error("QR code uumuu hin dandeenye:", error.message);
+          console.error("QR Code uumuu hin dandeenye:", error.message);
         }
       }
 
@@ -543,29 +533,10 @@ function scheduleReconnect() {
 
   reconnectDelay = Math.min(reconnectDelay * 2, 60000);
 
-  console.log("WhatsApp yeroo " + delay / 1000 + " sekondii booda irra deebi'a.");
-}
-
-/* =========================
-   ADMIN CHECK
-========================= */
-
-function checkAdmin(req, res, next) {
-  if (!ADMIN_TOKEN) {
-    return res.status(503).json({
-      error: "ADMIN_TOKEN Render Environment keessatti galchi."
-    });
-  }
-
-  const provided = req.get("x-admin-token");
-
-  if (provided !== ADMIN_TOKEN) {
-    return res.status(401).json({
-      error: "Token hin sirrii taane."
-    });
-  }
-
-  next();
+  console.log(
+    "WhatsApp yeroo " + delay / 1000 +
+    " sekondii booda irra deebi'a."
+  );
 }
 
 /* =========================
@@ -573,6 +544,8 @@ function checkAdmin(req, res, next) {
 ========================= */
 
 app.get("/", (req, res) => {
+  res.set("Cache-Control", "no-store");
+
   res.type("html").send(`<!DOCTYPE html>
 <html lang="om">
 <head>
@@ -580,108 +553,154 @@ app.get("/", (req, res) => {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#087443">
 <title>Hidaayatul-Bayaan</title>
+
 <style>
 *{box-sizing:border-box}
-body{font-family:Arial,sans-serif;background:#f0f7f2;margin:0;padding:18px;color:#173b29}
-.card{max-width:520px;margin:25px auto;background:white;padding:24px;border-radius:16px;box-shadow:0 4px 20px #0001;text-align:center}
+body{
+  font-family:Arial,sans-serif;
+  background:#f0f7f2;
+  margin:0;
+  padding:18px;
+  color:#173b29
+}
+.card{
+  max-width:520px;
+  margin:25px auto;
+  background:white;
+  padding:24px;
+  border-radius:16px;
+  box-shadow:0 4px 20px #0001;
+  text-align:center
+}
 h1{color:#087443}
-button{background:#087443;color:white;border:0;padding:12px 18px;border-radius:8px;font-size:16px;cursor:pointer}
-input{width:100%;padding:12px;margin:10px 0;border:1px solid #ccc;border-radius:8px}
-#qr{max-width:280px;width:100%;margin:15px auto}
-.status{padding:12px;background:#eef7ef;border-radius:8px;overflow-wrap:anywhere;line-height:1.8}
+button{
+  background:#087443;
+  color:white;
+  border:0;
+  padding:12px 18px;
+  border-radius:8px;
+  font-size:16px;
+  cursor:pointer
+}
+#qr{
+  max-width:280px;
+  width:100%;
+  margin:15px auto;
+  display:block
+}
+.status{
+  padding:12px;
+  background:#eef7ef;
+  border-radius:8px;
+  overflow-wrap:anywhere;
+  line-height:1.8
+}
 .small{font-size:13px;color:#555}
+.warning{
+  padding:12px;
+  border-radius:8px;
+  background:#fff3cd;
+  color:#674d03;
+  font-size:13px;
+  line-height:1.6
+}
 </style>
 </head>
+
 <body>
 <div class="card">
-<h1>🌿 Hidaayatul-Bayaan</h1>
-<p>WhatsApp Barnoota Islaamaa</p>
+  <h1>🌿 Hidaayatul-Bayaan</h1>
+  <p>WhatsApp Barnoota Islaamaa</p>
 
-<div class="status" id="status">Status ilaalaa jira...</div>
+  <div class="status" id="status">
+    Status ilaalaa jira...
+  </div>
 
-<div id="adminArea">
-<p>Token bulchiinsaa kee galchi.</p>
-<input id="token" type="password" placeholder="ADMIN_TOKEN">
-<button onclick="saveToken()">Token Kuusi</button>
-</div>
+  <div id="qrbox">
+    <p>QR Code qopheessaa jira...</p>
+  </div>
 
-<div id="qrbox"></div>
-<br>
-<button onclick="refreshStatus()">Haaromsi</button>
+  <button onclick="refreshStatus()">Haaromsi</button>
 
-<p class="small">QR code kee nama biraatti hin qoodin.</p>
+  <p class="warning">
+    QR Code kana nama biraatti hin qoodin.
+    WhatsApp kee waliin walqabsiisuuf qofa fayyadami.
+  </p>
+
+  <p class="small">📚 Barnoonni ifsaadha!</p>
 </div>
 
 <script>
-function saveToken(){
-  const value=document.getElementById('token').value.trim();
-  if(!value){
-    alert('Token galchi.');
-    return;
-  }
-  sessionStorage.setItem('hb_admin_token',value);
-  refreshStatus();
+function escapeHTML(value){
+  return String(value).replace(/[&<>"']/g,function(c){
+    return {
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c];
+  });
 }
 
 async function refreshStatus(){
   try{
-    const r=await fetch('/api/status');
-    const d=await r.json();
-
-    document.getElementById('status').innerHTML =
-      'WhatsApp: <b>'+(d.connected?'Walqabate':'Hin walqabanne')+
-      '</b><br>Database: '+(d.database?'Hojjechaa jira':'Rakkoo qaba')+
-      '<br>Ergaa fudhatame: '+d.messages+
-      (d.lastError?'<br>Dogoggora: '+escapeHTML(d.lastError):'');
-
-    const token=sessionStorage.getItem('hb_admin_token')||'';
-
-    if(!token){
-      document.getElementById('qrbox').innerHTML =
-        '<p>QR ilaaluuf token bulchiinsaa galchi.</p>';
-      return;
-    }
-
-    const qr=await fetch('/api/whatsapp/qr',{
-      headers:{'x-admin-token':token}
+    const response = await fetch('/api/status', {
+      cache: 'no-store'
     });
 
-    const q=await qr.json();
+    const data = await response.json();
 
-    if(!qr.ok){
-      document.getElementById('qrbox').innerHTML =
-        '<p>Token hin sirrii taane ykn hin qophoofne.</p>';
-      return;
+    document.getElementById('status').innerHTML =
+      'WhatsApp: <b>' +
+      (data.connected ? 'Walqabate ✅' : 'Hin walqabanne') +
+      '</b><br>Database: ' +
+      (data.database ? 'Hojjechaa jira ✅' : 'Rakkoo qaba ❌') +
+      '<br>Ergaa fudhatame: ' + data.messages +
+      (data.lastError
+        ? '<br>Dogoggora: ' + escapeHTML(data.lastError)
+        : '');
+
+    const qrResponse = await fetch('/api/whatsapp/qr', {
+      cache: 'no-store'
+    });
+
+    const qrData = await qrResponse.json();
+
+    const qrbox = document.getElementById('qrbox');
+
+    if(data.connected){
+      qrbox.innerHTML =
+        '<h3>WhatsApp walqabateera! ✅</h3>' +
+        '<p>Bot kee ergaa fudhachuuf qophaa\'eera.</p>';
+    } else if(qrData.qr){
+      qrbox.innerHTML =
+        '<h3>📱 QR Code WhatsApp</h3>' +
+        '<p>WhatsApp kee irraa QR kana scan godhi.</p>' +
+        '<img id="qr" alt="WhatsApp QR Code" src="' +
+        qrData.qr + '">' +
+        '<p>Yoo hin hojjanne, haaromsi.</p>';
+    } else {
+      qrbox.innerHTML =
+        '<p>QR Code qophaa’aa jira. ' +
+        'Daqiiqaa muraasa booda haaromsi.</p>';
     }
 
-    document.getElementById('qrbox').innerHTML =
-      q.qr
-      ? '<p>WhatsApp kee irraa QR kana scan godhi.</p><img id="qr" src="'+q.qr+'">'
-      : (d.connected
-          ? '<p>WhatsApp walqabateera. ✅</p>'
-          : '<p>QR code qophaa’aa jira. Daqiiqaa muraasa booda haaromsi.</p>');
-
-  }catch(e){
-    document.getElementById('status').textContent=
-      'Server bira ga’uu hin dandeenye.';
+  } catch(error) {
+    document.getElementById('status').textContent =
+      'Server bira ga’uu hin dandeenye. Irra deebi’i.';
   }
 }
 
-function escapeHTML(value){
-  return String(value).replace(/[&<>"']/g,function(c){
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-  });
-}
-
 refreshStatus();
-setInterval(refreshStatus,5000);
+setInterval(refreshStatus, 5000);
 </script>
 </body>
 </html>`);
 });
 
 /* =========================
-   HEALTH AND STATUS
+   HEALTH
 ========================= */
 
 app.get("/health", async (req, res) => {
@@ -703,6 +722,10 @@ app.get("/health", async (req, res) => {
   }
 });
 
+/* =========================
+   STATUS
+========================= */
+
 app.get("/api/status", async (req, res) => {
   let database = false;
 
@@ -710,6 +733,8 @@ app.get("/api/status", async (req, res) => {
     await pool.query("SELECT 1");
     database = true;
   } catch (_) {}
+
+  res.set("Cache-Control", "no-store");
 
   res.json({
     app: "Hidaayatul-Bayaan",
@@ -721,7 +746,18 @@ app.get("/api/status", async (req, res) => {
   });
 });
 
-app.get("/api/whatsapp/qr", checkAdmin, (req, res) => {
+/* =========================
+   QR CODE
+========================= */
+
+/*
+  Hubachiisa:
+  Endpoint kun token hin gaafatu.
+  Kanaaf QR Code nama website kana baneef mul'achuu danda'a.
+  Website kana yeroo pairing qofa banaa tursiisi.
+*/
+
+app.get("/api/whatsapp/qr", (req, res) => {
   res.set("Cache-Control", "no-store");
 
   res.json({
@@ -776,7 +812,8 @@ async function main() {
       server.removeListener("error", reject);
 
       console.log(
-        "Hidaayatul-Bayaan port " + PORT + " irratti hojjachaa jira."
+        "Hidaayatul-Bayaan port " + PORT +
+        " irratti hojjachaa jira."
       );
 
       resolve();
@@ -785,11 +822,18 @@ async function main() {
 
   startWhatsApp().catch((error) => {
     lastError = error.message;
-    console.error("WhatsApp initialization error:", error.message);
+    console.error(
+      "WhatsApp initialization error:",
+      error.message
+    );
   });
 }
 
 main().catch((error) => {
-  console.error("Server initialization failed:", error.stack || error);
+  console.error(
+    "Server initialization failed:",
+    error.stack || error
+  );
+
   process.exit(1);
 });
