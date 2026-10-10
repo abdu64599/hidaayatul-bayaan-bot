@@ -1,3 +1,5 @@
+"use strict";
+
 const express = require("express");
 const http = require("http");
 const pino = require("pino");
@@ -9,7 +11,8 @@ const {
   DisconnectReason,
   initAuthCreds,
   BufferJSON,
-  proto
+  proto,
+  fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
 
 const app = express();
@@ -23,7 +26,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const logger = pino({ level: "warn" });
 
 if (!DATABASE_URL) {
-  console.error("DATABASE_URL hin argamne.");
+  console.error("DOGOGGORA: DATABASE_URL hin argamne.");
   process.exit(1);
 }
 
@@ -47,6 +50,7 @@ let lastError = null;
 let lastDisconnectCode = null;
 let messageCount = 0;
 let databaseReady = false;
+let connectionAttempts = 0;
 
 const userMenus = new Map();
 
@@ -74,7 +78,8 @@ async function initializeDatabase() {
   `);
 
   databaseReady = true;
-  console.log("Database qophaa'eera.");
+
+  console.log("✅ Database qophaa'eera.");
 }
 
 function encodeJSON(value) {
@@ -92,15 +97,18 @@ function decodeJSON(value) {
 
 async function createDatabaseAuthState() {
   const result = await pool.query(
-    "SELECT data FROM whatsapp_auth_creds WHERE id = $1",
+    `SELECT data
+     FROM whatsapp_auth_creds
+     WHERE id = $1`,
     ["main"]
   );
 
   let creds;
 
-  if (result.rows.length) {
+  if (result.rows.length > 0) {
     creds = decodeJSON(result.rows[0].data);
-    console.log("WhatsApp session database irraa fe'ame.");
+
+    console.log("WhatsApp session duraanii fe'ameera.");
   } else {
     creds = initAuthCreds();
 
@@ -111,12 +119,14 @@ async function createDatabaseAuthState() {
       ["main", encodeJSON(creds)]
     );
 
-    console.log("Session WhatsApp haaraan uumame.");
+    console.log("WhatsApp session haaraan qophaa'e.");
   }
 
   const keys = {
     async get(type, ids) {
-      if (!ids || !ids.length) return {};
+      if (!ids || ids.length === 0) {
+        return {};
+      }
 
       const result = await pool.query(
         `SELECT key_id, data
@@ -132,7 +142,8 @@ async function createDatabaseAuthState() {
         let value = decodeJSON(row.data);
 
         if (type === "app-state-sync-key" && value) {
-          value = proto.Message.AppStateSyncKeyData.fromObject(value);
+          value =
+            proto.Message.AppStateSyncKeyData.fromObject(value);
         }
 
         output[row.key_id] = value;
@@ -152,7 +163,8 @@ async function createDatabaseAuthState() {
             if (value == null) {
               await client.query(
                 `DELETE FROM whatsapp_auth_keys
-                 WHERE key_type = $1 AND key_id = $2`,
+                 WHERE key_type = $1
+                 AND key_id = $2`,
                 [type, id]
               );
             } else {
@@ -181,7 +193,10 @@ async function createDatabaseAuthState() {
   };
 
   return {
-    state: { creds, keys },
+    state: {
+      creds,
+      keys
+    },
 
     async saveCreds() {
       await pool.query(
@@ -198,8 +213,33 @@ async function createDatabaseAuthState() {
   };
 }
 
+/*
+  Session duraanii WhatsApp hin haqnu.
+  Session haqachuun QR haaraa argachuuf yeroo
+  barbaachisu qofa murtii addaa barbaada.
+*/
+
+async function resetInvalidSession() {
+  console.log(
+    "WhatsApp session hin hojjenne. Session database keessaa haaromsaa jira."
+  );
+
+  await pool.query(
+    `DELETE FROM whatsapp_auth_keys`
+  );
+
+  await pool.query(
+    `DELETE FROM whatsapp_auth_creds WHERE id = $1`,
+    ["main"]
+  );
+
+  console.log(
+    "Session duraanii haqameera; yeroo itti aanu QR haaraan qophaa'a."
+  );
+}
+
 /* =========================================
-   SEENAA NABII MUHAMMAD ﷺ
+   SEENAA NABIYYII MUHAMMAD ﷺ
 ========================================= */
 
 const MUHAMMAD_STORY = [
@@ -207,71 +247,134 @@ const MUHAMMAD_STORY = [
     title: "1. Dhalachuu fi ijoollummaa",
     text:
       "Nabiyyiin Muhammad ﷺ Makkaa keessatti bara Filaa jedhamuun beekamu keessa dhalatan. " +
-      "Abbaan isaanii Abdullah, haati isaanii Aaminah bint Wahb turan. " +
-      "Isaan osoo hin dhalatin abbaan isaanii du'e. " +
-      "Ijoollummaatti haadha isaanii, achiis abbaa guddiftuu isaanii Abdul-Muxxalib dhabani. " +
-      "Ergasii eessuma isaanii Abu Taalib kunuunsa isaanii jalatti guddatan."
+      "Abbaan isaanii Abdullah ibn Abdul-Muxxalib, haati isaanii Aaminah bint Wahb turan. " +
+      "Abbaan isaanii osoo isaan hin dhalatin du'e. " +
+      "Yeroo ijoollummaa haadha isaanii dhabani; booda abbaa guddiftuu isaanii Abdul-Muxxalib du'aan dhabani. " +
+      "Eessuma isaanii Abu Taalib kunuunsa isaanii jalatti guddatan. " +
+      "Jireenya isaanii jalqabaa irraa obsa fi Rabbitti hirkachuu baranna."
   },
   {
-    title: "2. Amanamummaa fi gaa'ela",
+    title: "2. Dargaggummaa fi amanamummaa",
     text:
-      "Nabiyyiin Muhammad ﷺ dhugaa dubbachuu fi amanamummaa isaanii irraa kan ka'e Al-Amiin jechuun waamamu turan. " +
-      "Daldala keessatti amanamummaa agarsiisan. " +
-      "Umurii waggaa 25tti Khadiijah bint Khuwaylid (RA) waliin gaa'ela godhan. " +
-      "Khadiijah (RA) yeroo jalqaba wahyii fudhatan Nabiyyicha deeggaruun gahee guddaa qabdi."
+      "Nabiyyiin Muhammad ﷺ dargaggummaa isaanii keessatti dhugaa dubbachuu fi amanamummaa irratti beekamu turan. " +
+      "Namoonni Al-Amiin, jechuun amanamaa, jedhanii isaan waamu turan. " +
+      "Daldala keessatti soba, gowwoomsaa fi haqa namaa nyaachuu irraa fagaataa turan. " +
+      "Amalli isaanii namoota biratti kabaja guddaa argamsiise. " +
+      "Seenaa isaanii irraa dhugaa dubbachuu, waadaa eeguu fi amanamummaa baranna."
   },
   {
-    title: "3. Wahyii jalqabaa",
+    title: "3. Khadiijah (RA) waliin gaa'ela",
     text:
-      "Nabiyyiin Muhammad ﷺ yeroo umuriin isaanii waggaa 40 ga'u, holqa Hiraa keessatti ibaadaa fi xiinxalaaf yeroo dabarsu turan. " +
-      "Achitti Jibriil (AS) dhufee wahyii jalqabaa, aayata jalqabaa Suuraa Al-Alaq, itti dabarse. " +
+      "Nabiyyiin Muhammad ﷺ umurii isaanii waggaa 25tti Khadiijah bint Khuwaylid (RA) waliin gaa'ela godhan. " +
+      "Khadiijah (RA) dubartii kabajamtuu, daldaltuu fi amala gaarii qabdu turte. " +
+      "Yeroo wahyiin jalqabaa dhufe, Khadiijah (RA) Nabiyyicha jajjabeessitee deeggarte. " +
+      "Isheen nama jalqabaa isaan amane keessaa tokko turte. " +
+      "Seenaa maatii isaanii irraa jaalala, amanamummaa fi wal deeggaruu baranna."
+  },
+  {
+    title: "4. Wahyii jalqabaa",
+    text:
+      "Nabiyyiin Muhammad ﷺ yeroo umuriin isaanii waggaa 40 ga'u, holqa Hiraa keessatti yeroo dabarsu turan. " +
+      "Achitti Mala'ikaa Jibriil (AS) dhufee wahyii jalqabaa Suuraa Al-Alaq irraa itti dabarse. " +
+      "Akkana jechuun jalqaba: 'Iqra' — dubbisi. " +
       "Nabiyyummaan isaanii achumaan jalqabe. " +
-      "Khadiijah (RA) isaan jajjabeessite; Waraqah ibn Nawfal waliin mari'achuunis seenaa jalqabaa kana keessatti ni yaadatama."
+      "Yeroo jalqabaa kana booda gara Khadiijah (RA) deebi'anii waan isaan mudate itti himan. " +
+      "Khadiijah (RA) isaan jajjabeessite."
   },
   {
-    title: "4. Da'waa Makkaa",
+    title: "5. Da'waa jalqabaa",
     text:
-      "Nabiyyiin Muhammad ﷺ namoota gara Rabbiin tokko qofa gabbaruu, shirkii dhiisuu, dhugaa dubbachuu fi amala gaarii qabaachuuf waaman. " +
-      "Jalqaba namoota muraasa dhoksaadhaan barsiisan; booda ifatti da'waa godhan. " +
-      "Muslimoonni jalqabaa gariin ari'atamaa fi dararama keessa darban. " +
-      "Nabiyyiin obsa, rahmata fi Rabbitti hirkachuu barsiisan."
+      "Nabiyyiin Muhammad ﷺ namoota gara Rabbii tokko qofa gabbaruutti waaman. " +
+      "Jalqaba namoota dhihoo isaanii keessaa namoota amanan barsiisan. " +
+      "Khadiijah (RA), Abuu Bakr (RA), Ali (RA) fi namoonni biroo jalqaba Islaama fudhatan keessaa turan. " +
+      "Muslimoonni jalqabaa amantii isaanii keessatti jabaachuuf barnoota fi qajeelfama Nabiyyii irraa argatan. " +
+      "Da'waan isaanii tawhiida, haqaa fi amala gaarii irratti hundaa'e."
   },
   {
-    title: "5. Hijraa gara Madiinaa",
+    title: "6. Rakkoo Makkaa",
     text:
-      "Makkaa keessatti Muslimoonni rakkoo guddaa keessa erga darban booda, Nabiyyiin Muhammad ﷺ ajaja Rabbii irratti hirkachuun Madiinaa godaanan. " +
+      "Yeroo da'waan Islaamaa babal'achaa deemu, namoonni Makkaa keessaa gariin Muslimoota morman. " +
+      "Muslimoonni tokko tokko arrabsoo, ari'atamaa fi dararama keessa darban. " +
+      "Bilaal ibn Rabaah (RA) amantii isaa irraa kan ka'e dararama guddaa keessa darbe. " +
+      "Nabiyyiin Muhammad ﷺ Muslimoota obsa qabaachuu fi Rabbitti hirkachuu barsiisan. " +
+      "Seenaa kana irraa yeroo rakkoo amantii fi haqarratti dhaabbachuu baranna."
+  },
+  {
+    title: "7. Gadda guddaa",
+    text:
+      "Nabiyyiin Muhammad ﷺ yeroo jireenya isaanii keessatti gadda guddaa keessa darban. " +
+      "Khadiijah (RA) fi eessuma isaanii Abu Taalib yeroo walitti dhihoo keessatti du'aan dhabani. " +
+      "Khadiijah (RA) deeggarsa, jaalala fi tasgabbii isaanii keessatti gahee guddaa qabdi turte. " +
+      "Nabiyyiin gadda kana keessa illee hojii da'waa isaanii itti fufan. " +
+      "Seenaa kana irraa rakkoo keessatti obsa qabaachuu fi hojii gaarii itti fufuu baranna."
+  },
+  {
+    title: "8. Hijraa gara Madiinaa",
+    text:
+      "Yeroo Muslimoonni Makkaa keessatti rakkoo cimaa keessa seenan, Nabiyyiin Muhammad ﷺ Madiinaa godaanan. " +
       "Abuu Bakr As-Siddiiq (RA) imala kana keessatti isaanii waliin ture. " +
-      "Madiinaa keessatti masjiida ijaaran, Muslimoota walitti hidhan, obbolummaa isaanii cimsan, hawaasa haqaa fi walii gargaaruu irratti hundaa'e ijaaran."
+      "Godaanuun kun seenaa Islaamaa keessatti Hijraa jedhama. " +
+      "Madiinaa keessatti Muslimoonni hawaasa isaanii ijaaruu, walii gargaaruu fi obbolummaa cimsuu jalqaban. " +
+      "Hijraan obsa, karoora, amanamummaa fi Rabbitti hirkachuu nu barsiisa."
   },
   {
-    title: "6. Jireenya Madiinaa",
+    title: "9. Masjiida Madiinaa",
     text:
-      "Madiinaa keessatti Nabiyyiin ﷺ namoota barsiisan, hawaasa isaanii qindeessan, waliigaltee fi haqaan jiraachuu irratti xiyyeeffatan. " +
-      "Duulaalee Badr, Uhud fi Khandaq seenaa hawaasa Muslimootaa keessatti iddoo guddaa qabu. " +
-      "Nabiyyiin murtii keessatti haqaan hojjechuu, waadaa eeguu fi nama dadhabaa gargaaruu barsiisan."
+      "Nabiyyiin Muhammad ﷺ Madiinaa erga ga'anii booda masjiida ijaaruu keessatti hirmaatan. " +
+      "Masjiidni bakka salaataa qofa osoo hin taane, bakka barnootaa, marii fi hawaasa walitti fidu ta'e. " +
+      "Nabiyyiin Muslimoota gidduutti obbolummaa fi walii gargaaruu cimsan. " +
+      "Hawaasa keessatti haqa, amanamummaa fi waliigaltee kabajuun barbaachisaa akka ta'e barsiisan."
   },
   {
-    title: "7. Fath Makkaa",
+    title: "10. Badr, Uhud fi Khandaq",
+    text:
+      "Yeroo Madiinaa keessatti Muslimoonni qormaata adda addaa keessa darban. " +
+      "Badr, Uhud fi Khandaq taateewwan seenaa Islaamaa keessatti beekamoo dha. " +
+      "Taateewwan kana keessatti Muslimoonni ajaja, obsa, tokkummaa fi balaa keessatti wal deeggaruu baratan. " +
+      "Nabiyyiin ﷺ gorsaa fi qajeelfama isaanii itti fufan. " +
+      "Seenaa waraana kanaa barachuun qofa osoo hin taane, sababoota, barumsa fi haala taateewwan sanaa hubachuun barbaachisaa dha."
+  },
+  {
+    title: "11. Sulh Al-Hudaybiyyah",
+    text:
+      "Muslimoonni yeroo tokko Hajjii raawwachuuf gara Makkaa imaluuf ka'an. " +
+      "Hudaybiyyah keessatti waliigalteen Muslimoota fi Quraysh gidduutti taasifame. " +
+      "Yeroo sana namoonni tokko tokko waliigaltee sana ulfaataa fakkaachisanii ilaalan. " +
+      "Garuu booda carraa da'waa fi nagaa babal'isuuf balbala bane. " +
+      "Seenaa kana irraa obsaan mari'achuu, waliigaltee eeguu fi bu'aa yeroo dheeraa ilaaluu baranna."
+  },
+  {
+    title: "12. Fath Makkaa",
     text:
       "Bara 8 Hijraa keessatti Muslimoonni Makkaa seenuun seenaa guddaa raawwatan. " +
       "Nabiyyiin Muhammad ﷺ yeroo humna qabanitti namoota hedduuf dhiifama godhan. " +
       "Amalli isaanii araara, gad of qabuu fi rahmata agarsiisuun beekama. " +
-      "Seenaa kana irraa dhiifama, obsa fi humna yeroo argatanitti haqaan jiraachuu baranna."
+      "Seenaa kana irraa yeroo humna qabnu namoota hacuuccuu dhiisuu fi dhiifama irratti xiyyeeffachuu baranna."
   },
   {
-    title: "8. Hajjii fi du'a",
+    title: "13. Hajjii dhumaa",
     text:
-      "Nabiyyiin Muhammad ﷺ Hajjii isaanii isa dhumaa keessatti namootaaf gorsa guddaa kennan. " +
-      "Dhiiga, qabeenya fi kabaja namaa eeguu, haqa raawwachuu fi waan namootaaf amaname deebisuu barsiisan. " +
-      "Bara 11 Hijraa keessatti Madiinaa keessatti du'aan boqotan. " +
-      "Qur'aanni fi Sunnah isaanii Muslimootaaf qajeelfama guddaa ta'anii hafu."
+      "Nabiyyiin Muhammad ﷺ Hajjii isaanii isa dhumaa keessatti Muslimootaaf gorsa guddaa kennan. " +
+      "Dhiiga, qabeenya fi kabaja namaa eeguu, haqa raawwachuu, waan amanaman deebisuu fi walitti hin hacuuciin barsiisan. " +
+      "Gorsi isaanii Muslimootaaf qajeelfama guddaa ta'e. " +
+      "Seenaa kana irraa kabaja namaa eeguu, haqaan jiraachuu fi dirqama ofii bahachuu baranna."
   },
   {
-    title: "9. Amala Nabiyyii ﷺ",
+    title: "14. Du'a Nabiyyii ﷺ",
+    text:
+      "Nabiyyiin Muhammad ﷺ bara 11 Hijraa keessatti Madiinaa keessatti du'aan boqotan. " +
+      "Duuti isaanii Muslimootaaf gadda guddaa ture. " +
+      "Abuu Bakr (RA) Muslimoota jajjabeessuun amantii isaanii irratti akka dhaabbatan yaadachiise. " +
+      "Nabiyyiin ﷺ Qur'aana fi Sunnah akka qajeelfamaatti dhiisan. " +
+      "Muslimoonni jireenya isaanii irraa ibaadaa, amanamummaa, rahmata fi amala gaarii baratu."
+  },
+  {
+    title: "15. Amala Nabiyyii ﷺ",
     text:
       "Nabiyyiin Muhammad ﷺ dhugaa dubbachuu, amanamummaa, obsa, arjummaa, rahmata fi gad of qabuu irratti fakkeenya gaarii turan. " +
-      "Maatii isaanii gargaaru, daa'immanitti rahmata godhu, hiyyeeyyii kunuunsu, ollaa waliin gaariitti jiraachuu barsiisu turan. " +
-      "Muslimoonni jireenya isaanii irraa amala gaarii fi ibaadaa baratu."
+      "Maatii isaanii gargaaru, daa'immanitti rahmata godhu, hiyyeeyyii kunuunsu fi ollaa waliin gaariitti jiraachuu barsiisu turan. " +
+      "Nama dadhabaa tuffachuu hin barsiifne; haqaan jiraachuu fi namootaaf gaarummaa gochuu barsiisan. " +
+      "Muslimoonni jireenya isaanii irraa amala gaarii fi ibaadaa barachuu qabu."
   }
 ];
 
@@ -286,15 +389,15 @@ const OTHER_PROPHETS = {
       {
         title: "Uumama Aadam",
         text:
-          "Nabii Aadam (AS) nama jalqabaa fi nabii jalqabaa ture. " +
-          "Rabbiin isa uume, maqaa wantoota isa barsiise. " +
-          "Rabbiin malaa'ikotaaf sadjoodii kabajaa akka Aadamif godhan ajaje."
+          "Nabii Aadam (AS) nama jalqabaa ture. " +
+          "Rabbiin isa uume, maqaa wantootaa isa barsiise. " +
+          "Seenaa Aadam keessatti beekumsi, ajaja Rabbii kabajuun fi itti gaafatamummaan namaa ibsama."
       },
       {
-        title: "Tawbaa fi barumsa",
+        title: "Tawbaa Aadam",
         text:
-          "Aadamii fi haati keenya Hawwaa dogoggora erga raawwatanii booda gara Rabbii tawbaa godhan. " +
-          "Seenaa isaanii irraa tawbaa, ajaja Rabbii kabajuu fi araara Rabbii abdachuu baranna."
+          "Aadamii fi Hawwaa dogoggora erga raawwatanii booda gara Rabbii tawbaa godhan. " +
+          "Seenaa isaanii irraa dogoggora keenya beekuu, tawbaa godhuu fi araara Rabbii abdachuu baranna."
       }
     ]
   },
@@ -305,7 +408,7 @@ const OTHER_PROPHETS = {
       {
         title: "Da'waa Nuuh",
         text:
-          "Nabii Nuuh (AS) ummata isaa yeroo dheeraaf gara ibaadaa Rabbii qofaatti waame. " +
+          "Nabii Nuuh (AS) ummata isaa yeroo dheeraaf gara Rabbii tokko qofa gabbaruutti waame. " +
           "Guyyaa fi halkan isaan gorse, garuu namoonni hedduun didan. " +
           "Inni obsa fi amanamummaa keessatti fakkeenya ta'e."
       },
@@ -330,7 +433,7 @@ const OTHER_PROPHETS = {
           "Tawhiida irratti dhaabbachuun amala isaa guddaa ture."
       },
       {
-        title: "Qormaata fi barumsa",
+        title: "Qormaata fi Ka'baan",
         text:
           "Nabii Ibraahiim (AS) qormaata hedduu keessa darban; Rabbitti hirkachuu fi ajaja Isaa fudhachuu keessatti fakkeenya ta'an. " +
           "Inni Ismaa'iil (AS) waliin Ka'baan akka ijaaramtu keessatti hirmaate. " +
@@ -357,7 +460,7 @@ const SAHABAS = [
           "Arjummaa fi amanamummaan isaanii Muslimoota biratti fakkeenya gaarii ta'e."
       },
       {
-        title: "Hijraa fi khilaafaa",
+        title: "Hijraa fi khalifaa",
         text:
           "Abuu Bakr (RA) Hijraa gara Madiinaa keessatti Nabiyyii ﷺ waliin ture. " +
           "Nabiyyiin erga du'anii booda khalifaa jalqabaa ta'e. " +
@@ -369,10 +472,10 @@ const SAHABAS = [
     name: "Umar ibn Al-Khattaab (RA)",
     parts: [
       {
-        title: "Islaamummaa fi amalli isaa",
+        title: "Islaamummaa",
         text:
           "Umar (RA) jalqaba Islaama mormaa ture; booda Muslim ta'uun Islaamaaf jabinaan dhaabbate. " +
-          "Gootummaa, haq-qabeessummaa fi murtii cimaa irratti beekama. " +
+          "Gootummaa, haq-qabeessummaa fi murtii irratti beekama. " +
           "Islaamummaa fudhachuun Muslimootaaf jajjabina guddaa ta'e."
       },
       {
@@ -392,7 +495,7 @@ const SAHABAS = [
         text:
           "Uthmaan (RA) sahaabaa amanamaa fi arjaa ture. " +
           "Qabeenya isaa hojii gaarii fi Muslimoota gargaaruuf oolcha ture. " +
-          "Nabiyyii Muhammad ﷺ irraa kabaja qaba ture."
+          "Nabiyyiin Muhammad ﷺ isa kabajanii turan."
       },
       {
         title: "Khalifaa sadaffaa",
@@ -435,8 +538,8 @@ const SAHABAS = [
       {
         title: "Mu'azzina Islaamaa",
         text:
-          "Bilaal (RA) mu'azzina Nabiyyii Muhammad ﷺ keessaa isa beekamaa ture. " +
-          "Sagalee isaa fayyadamuun namoota salaataaf waama ture. " +
+          "Bilaal (RA) mu'azzina Nabiyyii Muhammad ﷺ beekamaa ture. " +
+          "Salaataaf namoota waamu keessatti gahee guddaa qaba ture. " +
           "Seenaa isaa irraa obsa, tawhiida fi ibaadaa baranna."
       }
     ]
@@ -449,7 +552,7 @@ const SAHABAS = [
         text:
           "Khaalid ibn Al-Waliid (RA) dura Muslimoota mormaa ture; booda Islaama fudhate. " +
           "Gootummaa fi dandeettii waraanaa isaatiin beekama. " +
-          "Nabiyyiin Muhammad ﷺ isa kabajanii ture."
+          "Islaama erga fudhatee booda tajaajila guddaa kenne."
       },
       {
         title: "Tajaajila Islaamaa",
@@ -465,7 +568,7 @@ const SAHABAS = [
       {
         title: "Daldalaa amanamaa",
         text:
-          "Abdur-Rahmaan ibn Awf (RA) sahaabaa dureessa ta'ee beekama, garuu qabeenya isaa keessatti arjummaa qaba ture. " +
+          "Abdur-Rahmaan ibn Awf (RA) sahaabaa dureessa ta'ee beekama; qabeenya isaa keessatti garuu arjummaa qaba ture. " +
           "Daldala keessatti amanamummaa fi hojii cimaa irratti fakkeenya ture."
       },
       {
@@ -509,7 +612,7 @@ const SAHABAS = [
         text:
           "Mus'ab (RA) Madiinaa keessatti Islaama barsiisuuf ergame. " +
           "Da'waa fi barsiisa isaa keessatti gahee guddaa qaba ture. " +
-          "Seenaa isaa irraa amantii, fedhii ofii aarsaa gochuu fi beekumsa barsiisuu baranna."
+          "Seenaa isaa irraa amantii, aarsaa gochuu fi beekumsa barsiisuu baranna."
       }
     ]
   },
@@ -533,7 +636,7 @@ const SAHABAS = [
 ];
 
 /* =========================================
-   MENU FUNCTIONS
+   MENUS
 ========================================= */
 
 function mainMenu() {
@@ -552,8 +655,8 @@ function mainMenu() {
 function muhammadMenu() {
   return (
     "📖 *SEENAA NABIYYII MUHAMMAD ﷺ*\n\n" +
-    MUHAMMAD_STORY.map((part, index) =>
-      `${index + 1}️⃣ ${part.title}`
+    MUHAMMAD_STORY.map(
+      (part, index) => `${index + 1}️⃣ ${part.title}`
     ).join("\n") +
     "\n\n0️⃣ Menu jalqabaatti deebi'i"
   );
@@ -572,8 +675,8 @@ function prophetMenu() {
 function sahabaMenu() {
   return (
     "🌟 *SEENAA SAHABOOTAA*\n\n" +
-    SAHABAS.map((person, index) =>
-      `${index + 1}️⃣ ${person.name}`
+    SAHABAS.map(
+      (person, index) => `${index + 1}️⃣ ${person.name}`
     ).join("\n") +
     "\n\n0️⃣ Menu jalqabaatti deebi'i"
   );
@@ -582,8 +685,8 @@ function sahabaMenu() {
 function storyPartsMenu(person) {
   return (
     `📚 *${person.name}*\n\n` +
-    person.parts.map((part, index) =>
-      `${index + 1}️⃣ ${part.title}`
+    person.parts.map(
+      (part, index) => `${index + 1}️⃣ ${part.title}`
     ).join("\n") +
     "\n\n0️⃣ Menu jalqabaatti deebi'i"
   );
@@ -595,6 +698,7 @@ function storyPartsMenu(person) {
 
 function getText(message) {
   const content = message.message;
+
   if (!content) return "";
 
   if (content.conversation) {
@@ -613,15 +717,19 @@ function getText(message) {
     return content.videoMessage.caption;
   }
 
+  if (content.buttonsResponseMessage?.selectedButtonId) {
+    return content.buttonsResponseMessage.selectedButtonId;
+  }
+
+  if (content.listResponseMessage?.singleSelectReply?.selectedRowId) {
+    return content.listResponseMessage.singleSelectReply.selectedRowId;
+  }
+
   return "";
 }
 
 async function handleIncomingMessage(message) {
-  if (
-    !message ||
-    !message.message ||
-    message.key?.fromMe
-  ) {
+  if (!message || !message.message || message.key?.fromMe) {
     return;
   }
 
@@ -637,6 +745,7 @@ async function handleIncomingMessage(message) {
   }
 
   const text = getText(message).trim();
+
   if (!text) return;
 
   messageCount++;
@@ -661,31 +770,28 @@ async function handleIncomingMessage(message) {
   if (greetings.includes(input)) {
     state = { page: "main" };
     reply = mainMenu();
+
   } else if (text === "0") {
     state = { page: "main" };
     reply = mainMenu();
-  } else if (
-    state.page === "main" &&
-    text === "1"
-  ) {
+
+  } else if (state.page === "main" && text === "1") {
     state = { page: "muhammad" };
     reply = muhammadMenu();
-  } else if (
-    state.page === "main" &&
-    text === "2"
-  ) {
+
+  } else if (state.page === "main" && text === "2") {
     state = { page: "prophets" };
     reply = prophetMenu();
-  } else if (
-    state.page === "main" &&
-    text === "3"
-  ) {
+
+  } else if (state.page === "main" && text === "3") {
     state = { page: "sahaba" };
     reply = sahabaMenu();
+
   } else if (
     state.page === "muhammad" &&
-    /^[1-9]$/.test(text) &&
-    MUHAMMAD_STORY[Number(text) - 1]
+    /^\d+$/.test(text) &&
+    Number(text) >= 1 &&
+    Number(text) <= MUHAMMAD_STORY.length
   ) {
     const part = MUHAMMAD_STORY[Number(text) - 1];
 
@@ -694,8 +800,9 @@ async function handleIncomingMessage(message) {
     reply =
       `📖 *${part.title}*\n\n` +
       `${part.text}\n\n` +
-      "Lakkoofsa biraa seenaa itti aanuuf filadhu.\n" +
+      "Kutaa biraa dubbisuuf lakkoofsa isaa filadhu.\n" +
       "0️⃣ Menu jalqabaatti deebi'i";
+
   } else if (
     state.page === "prophets" &&
     ["1", "2", "3"].includes(text)
@@ -714,26 +821,26 @@ async function handleIncomingMessage(message) {
     };
 
     reply = storyPartsMenu(person);
+
   } else if (
     state.page === "otherProphet" &&
     OTHER_PROPHETS[state.person] &&
-    /^[1-2]$/.test(text)
+    ["1", "2"].includes(text)
   ) {
     const person = OTHER_PROPHETS[state.person];
     const part = person.parts[Number(text) - 1];
 
-    if (part) {
-      reply =
-        `📖 *${person.name} — ${part.title}*\n\n` +
-        `${part.text}\n\n` +
-        storyPartsMenu(person);
-    } else {
-      reply = storyPartsMenu(person);
-    }
+    reply =
+      `📖 *${person.name}*\n` +
+      `*${part.title}*\n\n` +
+      `${part.text}\n\n` +
+      storyPartsMenu(person);
+
   } else if (
     state.page === "sahaba" &&
-    /^[1-9]$/.test(text) &&
-    SAHABAS[Number(text) - 1]
+    /^\d+$/.test(text) &&
+    Number(text) >= 1 &&
+    Number(text) <= SAHABAS.length
   ) {
     const index = Number(text) - 1;
     const person = SAHABAS[index];
@@ -744,11 +851,10 @@ async function handleIncomingMessage(message) {
     };
 
     reply = storyPartsMenu(person);
+
   } else if (
     state.page === "sahabaStory" &&
-    Number.isInteger(Number(text)) &&
-    Number(text) >= 1 &&
-    Number(text) <= 2
+    ["1", "2"].includes(text)
   ) {
     const person = SAHABAS[state.personIndex];
 
@@ -764,6 +870,7 @@ async function handleIncomingMessage(message) {
       state = { page: "main" };
       reply = mainMenu();
     }
+
   } else {
     reply =
       "Filannoon kee sirrii miti.\n\n" +
@@ -774,7 +881,9 @@ async function handleIncomingMessage(message) {
   userMenus.set(jid, state);
 
   if (!sock || !connected) {
-    console.log("WhatsApp hin walqabanne; deebiin hin ergamne.");
+    console.log(
+      "Ergaa fudhatame, garuu WhatsApp hin walqabanne."
+    );
     return;
   }
 
@@ -790,33 +899,68 @@ function scheduleReconnect() {
 
   const delay = reconnectDelay;
 
-  reconnectTimer = setTimeout(() => {
+  console.log(
+    `WhatsApp sekondii ${Math.round(delay / 1000)} booda irra deebi'a.`
+  );
+
+  reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
 
-    startWhatsApp().catch((error) => {
+    try {
+      await startWhatsApp();
+    } catch (error) {
       lastError = error.message;
-      console.error("Reconnect error:", error.message);
-    });
+
+      console.error(
+        "Reconnect error:",
+        error.stack || error.message
+      );
+    }
   }, delay);
 
   reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-
-  console.log(
-    `WhatsApp sekondii ${delay / 1000} booda irra deebi'a.`
-  );
 }
 
 async function startWhatsApp() {
   if (starting || stopping) return;
 
   starting = true;
+  connectionAttempts++;
 
   try {
-    console.log("WhatsApp walqabsiisuuf yaalaa jira...");
+    console.log(
+      `WhatsApp walqabsiisaa jira. Yaalii: ${connectionAttempts}`
+    );
 
     const auth = await createDatabaseAuthState();
 
-    const socket = makeWASocket({
+    /*
+      Version Baileys haaraa argachuuf yaalla.
+      Yoo version internet irraa argachuun kufe,
+      Baileys version ofumaan fayyadama.
+    */
+
+    let version;
+
+    try {
+      const versionInfo = await fetchLatestBaileysVersion();
+
+      if (versionInfo && versionInfo.version) {
+        version = versionInfo.version;
+
+        console.log(
+          "Baileys version argame:",
+          version.join(".")
+        );
+      }
+    } catch (versionError) {
+      console.error(
+        "Version haaraa argachuun hin milkoofne; version default fayyadama:",
+        versionError.message
+      );
+    }
+
+    const socketOptions = {
       auth: auth.state,
       logger,
       printQRInTerminal: false,
@@ -826,7 +970,13 @@ async function startWhatsApp() {
       keepAliveIntervalMs: 25000,
       markOnlineOnConnect: false,
       syncFullHistory: false
-    });
+    };
+
+    if (version) {
+      socketOptions.version = version;
+    }
+
+    const socket = makeWASocket(socketOptions);
 
     sock = socket;
 
@@ -835,12 +985,20 @@ async function startWhatsApp() {
         await auth.saveCreds();
       } catch (error) {
         lastError = error.message;
-        console.error("Session kuusuu hin dandeenye:", error.message);
+
+        console.error(
+          "Session kuusuu hin dandeenye:",
+          error.stack || error.message
+        );
       }
     });
 
     socket.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, qr } = update;
+      const {
+        connection,
+        lastDisconnect,
+        qr
+      } = update;
 
       lastConnectionUpdate = new Date().toISOString();
 
@@ -848,28 +1006,35 @@ async function startWhatsApp() {
         try {
           currentQR = await QRCode.toDataURL(qr);
           connected = false;
-          console.log("QR Code qophaa'e.");
+
+          console.log("✅ QR Code haaraan qophaa'e.");
         } catch (error) {
           lastError = error.message;
-          console.error("QR Code error:", error.message);
+
+          console.error(
+            "QR Code uumuu hin dandeenye:",
+            error.message
+          );
         }
+      }
+
+      if (connection === "connecting") {
+        console.log("WhatsApp walqabsiisaa jira...");
       }
 
       if (connection === "open") {
         connected = true;
         currentQR = null;
         reconnectDelay = 5000;
+        connectionAttempts = 0;
         lastError = null;
         lastDisconnectCode = null;
 
-        console.log("WhatsApp milkaa'inaan walqabate.");
+        console.log("✅ WhatsApp milkaa'inaan walqabate.");
       }
 
       if (connection === "close") {
         connected = false;
-        currentQR = null;
-
-        if (sock === socket) sock = null;
 
         const statusCode =
           lastDisconnect?.error?.output?.statusCode ??
@@ -877,27 +1042,59 @@ async function startWhatsApp() {
           null;
 
         lastDisconnectCode = statusCode;
+
         lastError =
           lastDisconnect?.error?.message ||
           "WhatsApp connection cufame.";
 
         console.error(
-          "WhatsApp connection close details:",
+          "WHATSAPP CONNECTION CLOSED:",
           JSON.stringify({
             statusCode,
-            errorMessage: lastError,
-            errorName: lastDisconnect?.error?.name
+            error: lastError,
+            name: lastDisconnect?.error?.name
           })
         );
 
+        if (sock === socket) {
+          sock = null;
+        }
+
+        currentQR = null;
+
+        /*
+          Yoo WhatsApp session logout ta'e,
+          session haaromsuun barbaachisuu danda'a.
+          Session duraanii qofa yeroo kana haaromsina.
+        */
+
         if (statusCode === DisconnectReason.loggedOut) {
-          lastError =
-            "WhatsApp logout ta'e. QR Code haaraa scan godhi.";
-          console.error(lastError);
+          try {
+            await resetInvalidSession();
+
+            if (!stopping) {
+              reconnectDelay = 5000;
+              scheduleReconnect();
+            }
+          } catch (resetError) {
+            lastError =
+              "Session haaromsuu hin dandeenye: " +
+              resetError.message;
+
+            console.error(lastError);
+          }
+
           return;
         }
 
-        if (!stopping) scheduleReconnect();
+        /*
+          Connection kufe yoo ta'e, irra deebi'ee
+          walqabsiisuuf yaala.
+        */
+
+        if (!stopping) {
+          scheduleReconnect();
+        }
       }
     });
 
@@ -909,10 +1106,15 @@ async function startWhatsApp() {
           await handleIncomingMessage(message);
         } catch (error) {
           lastError = error.message;
-          console.error("Message error:", error.message);
+
+          console.error(
+            "Message processing error:",
+            error.stack || error.message
+          );
         }
       }
     });
+
   } catch (error) {
     lastError = error.message;
 
@@ -921,7 +1123,9 @@ async function startWhatsApp() {
       error.stack || error.message
     );
 
-    if (!stopping) scheduleReconnect();
+    if (!stopping) {
+      scheduleReconnect();
+    }
   } finally {
     starting = false;
   }
@@ -943,13 +1147,53 @@ app.get("/", (req, res) => {
 <title>Hidaayatul-Bayaan</title>
 <style>
 *{box-sizing:border-box}
-body{font-family:Arial,sans-serif;background:#f0f7f2;margin:0;padding:18px;color:#173b29}
-.card{max-width:520px;margin:25px auto;background:white;padding:24px;border-radius:16px;box-shadow:0 4px 20px #0001;text-align:center}
+body{
+  font-family:Arial,sans-serif;
+  background:#f0f7f2;
+  margin:0;
+  padding:18px;
+  color:#173b29
+}
+.card{
+  max-width:520px;
+  margin:25px auto;
+  background:white;
+  padding:24px;
+  border-radius:16px;
+  box-shadow:0 4px 20px #0001;
+  text-align:center
+}
 h1{color:#087443}
-button{background:#087443;color:white;border:0;padding:12px 18px;border-radius:8px;font-size:16px;cursor:pointer}
-#qr{max-width:280px;width:100%;margin:15px auto;display:block}
-.status{padding:12px;background:#eef7ef;border-radius:8px;overflow-wrap:anywhere;line-height:1.8}
-.warning{padding:12px;border-radius:8px;background:#fff3cd;color:#674d03;font-size:13px;line-height:1.6}
+button{
+  background:#087443;
+  color:white;
+  border:0;
+  padding:12px 18px;
+  border-radius:8px;
+  font-size:16px;
+  cursor:pointer
+}
+#qr{
+  max-width:280px;
+  width:100%;
+  margin:15px auto;
+  display:block
+}
+.status{
+  padding:12px;
+  background:#eef7ef;
+  border-radius:8px;
+  overflow-wrap:anywhere;
+  line-height:1.8
+}
+.warning{
+  padding:12px;
+  border-radius:8px;
+  background:#fff3cd;
+  color:#674d03;
+  font-size:13px;
+  line-height:1.6
+}
 </style>
 </head>
 <body>
@@ -957,51 +1201,109 @@ button{background:#087443;color:white;border:0;padding:12px 18px;border-radius:8
 <h1>🌿 Hidaayatul-Bayaan</h1>
 <p>WhatsApp Barnoota Islaamaa</p>
 <div class="status" id="status">Status ilaalaa jira...</div>
-<div id="qrbox"><p>QR Code qopheessaa jira...</p></div>
+<div id="qrbox">
+<p>QR Code qopheessaa jira...</p>
+</div>
 <button onclick="refreshStatus()">Haaromsi</button>
-<p class="warning">QR Code kana nama biraatti hin qoodin. WhatsApp kee waliin walqabsiisuuf qofa fayyadami.</p>
+<p class="warning">
+QR Code kana nama biraatti hin qoodin.
+WhatsApp kee waliin walqabsiisuuf qofa fayyadami.
+</p>
 <p>📚 Barnoonni ifsaadha!</p>
 </div>
+
 <script>
 async function refreshStatus(){
- try{
-  const r=await fetch('/api/status',{cache:'no-store'});
-  const d=await r.json();
+  const status = document.getElementById('status');
+  const box = document.getElementById('qrbox');
 
-  document.getElementById('status').innerHTML=
-   'WhatsApp: <b>'+(d.connected?'Walqabateera ✅':'Hin walqabanne')+'</b><br>'+
-   'Database: '+(d.database?'Hojjechaa jira ✅':'Rakkoo qaba ❌')+
-   (d.lastError?'<br>Dogoggora: '+String(d.lastError).replace(/[&<>"]/g,''):'') ;
+  try {
+    const response = await fetch('/api/status', {
+      cache: 'no-store'
+    });
 
-  const qrResponse=await fetch('/api/whatsapp/qr',{cache:'no-store'});
-  const q=await qrResponse.json();
-  const box=document.getElementById('qrbox');
+    const data = await response.json();
 
-  if(d.connected){
-   box.innerHTML='<h3>WhatsApp walqabateera! ✅</h3>';
-  }else if(q.qr){
-   box.innerHTML='<h3>📱 QR Code WhatsApp</h3><p>WhatsApp kee irraa scan godhi.</p>';
-   const img=document.createElement('img');
-   img.id='qr';
-   img.alt='WhatsApp QR Code';
-   img.src=q.qr;
-   box.appendChild(img);
-  }else{
-   box.innerHTML='<p>QR Code qophaa’aa jira. Muraasa booda haaromsi.</p>';
+    status.textContent = '';
+
+    const line1 = document.createElement('div');
+    line1.textContent =
+      'WhatsApp: ' +
+      (data.connected ? 'Walqabateera ✅' : 'Hin walqabanne ❌');
+
+    const line2 = document.createElement('div');
+    line2.textContent =
+      'Database: ' +
+      (data.database ? 'Hojjechaa jira ✅' : 'Rakkoo qaba ❌');
+
+    status.appendChild(line1);
+    status.appendChild(line2);
+
+    if (data.lastDisconnectCode !== null &&
+        data.lastDisconnectCode !== undefined) {
+      const codeLine = document.createElement('div');
+      codeLine.textContent =
+        'Disconnect code: ' + data.lastDisconnectCode;
+      status.appendChild(codeLine);
+    }
+
+    if (data.lastError) {
+      const errorLine = document.createElement('div');
+      errorLine.textContent = 'Dogoggora: ' + data.lastError;
+      status.appendChild(errorLine);
+    }
+
+    const qrResponse = await fetch('/api/whatsapp/qr', {
+      cache: 'no-store'
+    });
+
+    const qrData = await qrResponse.json();
+
+    box.replaceChildren();
+
+    if (data.connected) {
+      const heading = document.createElement('h3');
+      heading.textContent = 'WhatsApp walqabateera! ✅';
+      box.appendChild(heading);
+
+    } else if (qrData.qr) {
+      const heading = document.createElement('h3');
+      heading.textContent = '📱 QR Code WhatsApp';
+      box.appendChild(heading);
+
+      const instruction = document.createElement('p');
+      instruction.textContent =
+        'WhatsApp kee irraa Linked Devices keessatti scan godhi.';
+      box.appendChild(instruction);
+
+      const img = document.createElement('img');
+      img.id = 'qr';
+      img.alt = 'WhatsApp QR Code';
+      img.src = qrData.qr;
+      box.appendChild(img);
+
+    } else {
+      const message = document.createElement('p');
+      message.textContent =
+        'WhatsApp walqabsiisaa jira. Yoo yeroo dheeraa fudhate status fi log ilaali.';
+      box.appendChild(message);
+    }
+
+  } catch (error) {
+    status.textContent =
+      'Server bira ga’uu hin dandeenye. Muraasa booda irra deebi’i.';
   }
- }catch(e){
-  document.getElementById('status').textContent='Server bira ga’uu hin dandeenye.';
- }
 }
+
 refreshStatus();
-setInterval(refreshStatus,5000);
+setInterval(refreshStatus, 5000);
 </script>
 </body>
 </html>`);
 });
 
 /* =========================================
-   HEALTH AND STATUS
+   HEALTH
 ========================================= */
 
 app.get("/health", async (req, res) => {
@@ -1018,10 +1320,15 @@ app.get("/health", async (req, res) => {
     res.status(503).json({
       ok: false,
       app: "Hidaayatul-Bayaan",
-      database: false
+      database: false,
+      error: error.message
     });
   }
 });
+
+/* =========================================
+   STATUS
+========================================= */
 
 app.get("/api/status", async (req, res) => {
   let database = false;
@@ -1029,7 +1336,9 @@ app.get("/api/status", async (req, res) => {
   try {
     await pool.query("SELECT 1");
     database = true;
-  } catch (_) {}
+  } catch (error) {
+    lastError = error.message;
+  }
 
   res.set("Cache-Control", "no-store");
 
@@ -1041,9 +1350,15 @@ app.get("/api/status", async (req, res) => {
     messages: messageCount,
     lastConnectionUpdate,
     lastDisconnectCode,
-    lastError
+    lastError,
+    qrAvailable: Boolean(currentQR),
+    connectionAttempts
   });
 });
+
+/* =========================================
+   QR CODE
+========================================= */
 
 app.get("/api/whatsapp/qr", (req, res) => {
   res.set("Cache-Control", "no-store");
@@ -1063,20 +1378,28 @@ async function shutdown() {
 
   stopping = true;
 
+  console.log("Server cufamaa jira...");
+
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
 
   try {
-    if (sock) sock.end(undefined);
-  } catch (_) {}
+    if (sock) {
+      sock.end(undefined);
+    }
+  } catch (error) {
+    console.error("Socket close error:", error.message);
+  }
 
   server.close();
 
   try {
     await pool.end();
-  } catch (_) {}
+  } catch (error) {
+    console.error("Database close error:", error.message);
+  }
 
   process.exit(0);
 }
@@ -1098,7 +1421,7 @@ async function main() {
       server.removeListener("error", reject);
 
       console.log(
-        `Hidaayatul-Bayaan port ${PORT} irratti hojjachaa jira.`
+        `🌿 Hidaayatul-Bayaan port ${PORT} irratti hojjachaa jira.`
       );
 
       resolve();
@@ -1107,7 +1430,11 @@ async function main() {
 
   startWhatsApp().catch((error) => {
     lastError = error.message;
-    console.error("WhatsApp initialization error:", error.message);
+
+    console.error(
+      "WhatsApp initialization error:",
+      error.stack || error.message
+    );
   });
 }
 
@@ -1116,5 +1443,6 @@ main().catch((error) => {
     "Server initialization failed:",
     error.stack || error.message
   );
+
   process.exit(1);
 });
