@@ -1,18 +1,17 @@
 {
-"name": "hidaayatul-bayaan-bot",
-"version": "1.0.0",
-"description": "Hidaayatul-Bayaan Islamic Education and Examination WhatsApp Bot",
-"main": "server.js",
-"scripts": {
-"start": "node server.js"
-},
-"engines": {
-"node": ">=20"
-},
-"dependencies": {
-"@whiskeysockets/baileys": "latest",
-"express": "latest",
-"pg": "latest",
-"qrcode": "latest"
-}
+  "name": "hidaayatul-bayaan",
+  "version": "1.0.0",
+  "description": "Hidaayatul-Bayaan WhatsApp Seenaa Nabiyyii Muhammad fi Sahabootaa",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "express": "^4.21.2",
+    "pino": "^9.6.0"
+  }
 }
