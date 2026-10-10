@@ -282,7 +282,7 @@ const story = SEENAA_NABIYYII[text];
 reply = "📖 *${story.title}*\n\n${story.text}\n\n0️⃣ Gara menu jalqabaatti deebi'i";
 } else if (userMenus.get(jid) === "sahaba" && SEENAA_SAHABOOTAA[text]) {
 const story = SEENAA_SAHABOOTAA[text];
-reply = "🌟 *${story.title}*\n\n${story.text}\n\n0️⃣ Gara menu jalqabaatti deebi'i";
+reply = `📖 *${story.title}*\n\n${story.text}\n\n0️⃣ Gara menu jalqabaatti deebi'i`;
 } else {
 reply =
 "Filannoon kee naaf hin galle.\n\n" +
