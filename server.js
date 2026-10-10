@@ -282,18 +282,22 @@ async function saveUser(phone, name = "") {
     [phone, name]
   );
 }
-
 function mainMenu(name = "") {
   return (
-    `Assalaamu alaykum ${name}!\n\n` +
-    `Baga gara Hidaayatul-Bayaan dhuftan.\n\n` +
+    `🌿 ASSALAAMU ALEYKUM ${name || "Obboleessa koo"}!\n\n` +
+    `📚 HID AAYATUL-BAYAAN\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `Barnoota Islaamaa fi Qormaata\n\n` +
     `1️⃣ Qormaata Uumi\n` +
     `2️⃣ Qormaata Fudhadhu\n` +
     `3️⃣ Qabxii Koo\n` +
     `4️⃣ Qormaata Koo\n` +
-    `5️⃣ Barnoota\n` +
-    `0️⃣ Menu kana irra deebi'i\n\n` +
-    `Filannoo kee lakkoofsaan ergi.`
+    `5️⃣ Barnoota Islaamaa\n` +
+    `6️⃣ Seenaa Nabiyyii Muhammad ﷺ\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🔢 Lakkoofsa filannoo kee ergi.\n` +
+    `🏠 Menu kana irra deebi'uuf 0 ergi.\n\n` +
+    `✨ Barnoonni ifsaadhaa!`
   );
 }
 
@@ -870,7 +874,274 @@ async function handleLessonChoice(jid, text) {
     lessons[text] || "Filannoo hin beekamne. Lakkoofsa 1 hanga 5 keessaa tokko ergi."
   );
 }
+// ============================================
+// SEENAA NABII MUHAMMAD ﷺ
+// HID AAYATUL-BAYAAN
+// ============================================
 
+const SEERAH = [
+  {
+    title: "Araboota Islaama Dura",
+    text:
+`Araboonni Islaamni dhufuu isaa dura gosoota adda addaatti qoodamanii jiraatu turan. Ka'baa kabaju turan; garuu hedduun isaanii sanamoota waaqeffachaa turan.
+
+Jireenya isaanii keessatti daldalli, walaloon, gootummaan fi aadaan gosaa iddoo guddaa qabu turan. Haa ta'u malee, waaqeffannaa sanamaa, walitti bu'iinsi gosoota gidduu jiru, cunqursaan dadhaboo irratti raawwatamu fi rakkooleen hawaasummaa hedduun ni turan.
+
+Rabbii Olta'aan namoota dukkana shirkii keessaa gara ifa tawhiidaatti baasuuf Nabii Muhammad ﷺ erge.
+
+Barumsa: Islaamni namoota Rabbii Tokkicha qofa waaqeffatan, haqaan jiraatan fi namootaaf gara-laafina qabaatan taasisuuf dhufe.`
+  },
+  {
+    title: "Dhalachuu fi Maatii Nabiyyii ﷺ",
+    text:
+`Nabii Muhammad ibn Abdullaah ﷺ Makkaa keessatti, gosa Quraysh keessaa, maatii Banii Haashim keessatti dhalatan.
+
+Abbaan isaanii Abdullaah ibn Abdil-Muxxalib; haati isaanii Aamina bint Wahb turan. Nabiyyiin ﷺ waggaa Arbaa, yeroo Waggaa Arbaa jedhamu keessatti dhalatan. Waggaa dhaloota isaanii irratti yaadni seenaa keessatti garaagarummaan qaba.
+
+Quraysh keessatti maatiin isaanii beekamtii qabu turan. Nabiyyiin ﷺ Rabbiin filatee ergamaa isaa godhe.
+
+Barumsa: Kabajni namaa qabeenyaan ykn aangoodhaan qofa hin madaalamu; Rabbiin biratti iimaanaa fi hojii gaariitu murteessa.`
+  },
+  {
+    title: "Yatimummaa fi Ijoollummaa",
+    text:
+`Abbaan Nabiyyii ﷺ osoo isaan hin dhalatin du'e. Kanaafuu, Nabiyyiin ﷺ addunyaa kanatti yatiima ta'anii dhufan.
+
+Haati isaanii Aamina yeroo isaan ijoollee ta'an duute. Sana booda akaakayyuun isaanii Abdil-Muxxalib isaan kunuunsan. Akaakayyuun isaanii erga du'anii booda eessumni isaanii Abu Xaalib isaan guddise.
+
+Rakkoo ijoollummaa keessa darbanii guddatan; garuu Rabbiin isaan tiksee, jireenya isaanii keessatti amala gaarii fi amanamummaa isaan barsiise.
+
+Barumsa: Yatimoota kunuunsuun hojii guddaa Islaamni jajjabeessuudha.`
+  },
+  {
+    title: "Dargaggummaa fi Amanamummaa",
+    text:
+`Nabiyyiin Muhammad ﷺ dargaggummaa isaanii keessatti hojii gaarii hojjechaa fi namoota waliin amanamummaan jiraachaa turan.
+
+Dhugaa dubbachuu fi amanamummaa isaaniitiin hawaasa Makkaa keessatti beekamoo ta'an. Namoonni isaan Al-Amiin jechuun waamu turan; jechuun nama amanamaa.
+
+Daldala keessatti amanamummaa agarsiisan. Nama hin gowwoomsan, waadaa hin cabsan, namoota hin cunqursan.
+
+Barumsa: Muslimni hojii isaa keessatti amanamaa, dhugaa dubbataa fi waadaa eegu ta'uu qaba.`
+  },
+  {
+    title: "Ka'baa Ijaaruu fi Murtii Ogummaa",
+    text:
+`Yeroo Ka'baa haaromsan, Dhagaa Gurraacha (Al-Hajar Al-Aswad) bakka isaa kaa'uun gosoota Quraysh gidduutti falmiin uumame.
+
+Namoonni murtii eenyu akka kennu irratti wal morman. Nabiyyiin Muhammad ﷺ furmaata ogummaa qabu dhiyeessan. Uffata tokko irratti dhagaa sana kaa'anii, hoggantoota gosoota garaagaraa akka waliin ol kaasaniif godhan; achiis ofii isaanii bakka isaa kaa'an.
+
+Furmaanni isaanii walitti bu'iinsa hambise.
+
+Barumsa: Rakkoo hiikuuf ogummaa, haqaa fi walitti dhufeenya gaarii fayyadamuun barbaachisaadha.`
+  },
+  {
+    title: "Wahyi Jalqabaa",
+    text:
+`Nabiyyiin ﷺ yeroo umuriin isaanii waggaa afurtama ga'u, yeroo baay'ee Holqa Hiraa keessatti kophaa turanii ibaadaa fi yaada keessa seenu turan.
+
+Achitti Malaaykaa Jibriil عليه السلام isaanitti dhufee wahyii jalqabaa fide. Jechoonni jalqabaa Suuraa Al-Alaq keessaa aayatawwan shan jalqabaa turan.
+
+Wahyiin kun ergamummaa Nabiyyii ﷺ jalqabe. Qur'aanni waggoota keessatti suuta suutaan isaan irratti bu'e; namoota gara tawhiidaa, haqaa fi jireenya gaariitti waame.
+
+Barumsa: Barnoonni Islaamaa Qur'aana irraa jalqaba; dubbisuu fi beekumsa barbaaduun barbaachisaadha.`
+  },
+  {
+    title: "Da'waa Iccitii fi Ifatti",
+    text:
+`Nabiyyiin ﷺ jalqaba namoota isaanitti dhihoo ta'an gara Islaamaatti waaman. Haati warraa isaanii Khadiijaa رضي الله عنها, Alii ibn Abii Xaalib رضي الله عنه, Zayd ibn Haarithah رضي الله عنه fi Abu Bakr رضي الله عنه namoota Islaama jalqaba fudhatan keessaa turan.
+
+Booda Rabbiin ajaja da'waa ifatti labsuu kenne. Nabiyyiin ﷺ namoota sanama dhiisanii Rabbii Tokkicha qofa akka waaqeffatan waaman.
+
+Hoggantoonni Makkaa waamicha kana morman; sababni isaas amantii isaanii, aadaa isaanii fi aangoo isaanii irratti dhiibbaa akka fidu yaadan.
+
+Barumsa: Da'waa ogummaa, obsaa fi amala gaariin raawwatamuu qaba.`
+  },
+  {
+    title: "Cunqursaa Muslimootaa fi Hijraa Habashaa",
+    text:
+`Muslimoonni jalqabaa Makkaa keessatti cunqursaa cimaa keessa darban. Namoonni tokko tokko reebaman, doorsifaman, qabeenyi isaanii irraa fudhatame.
+
+Nabiyyiin ﷺ sahaabota isaanii keessaa muraasa gara Habashaa akka godaanan eeyyaman. Achitti mootii haqaa qabu, Najjaashii, bira nagaa argachuuf abdatan.
+
+Muslimoonni cunqursaa keessa jiran amantii isaanii irratti cichanii turan.
+
+Barumsa: Amantii irratti cichuun, namoota cunqursaman gargaaruun fi haqaa dhaabbachuun barbaachisaadha.`
+  },
+  {
+    title: "Waggaa Gadda fi Ta'if",
+    text:
+`Nabiyyiin ﷺ jireenya isaanii keessatti yeroo gaddaa guddaa keessa darbaniiru. Khadiijaan رضي الله عنها fi eessumni isaanii Abu Xaalib yeroo walitti dhihaatan du'uun gadda guddaa isaanitti fide.
+
+Nabiyyiin ﷺ namoota gara Islaamaatti waamuuf Ta'if dhaqanii turan. Garuu namoonni achi keessaa tokko tokko isaan didan; namoonni biroonis isaan miidhan.
+
+Ta'us Nabiyyiin ﷺ abdii hin kutanne. Namootaaf qajeelina hawwuu fi gara-laafina agarsiisuu itti fufan.
+
+Barumsa: Rakkoo keessatti obsuu fi abdii Rabbii irraa hin kutannee jiraachuun barbaachisaadha.`
+  },
+  {
+    title: "Isra'aa fi Mi'iraaj",
+    text:
+`Isra'aa fi Mi'iraaj mu'jizaa Rabbiin Nabiyyii ﷺ kabaje keessaa tokko.
+
+Isra'aan imala halkan Masjid Al-Haraam irraa gara Masjid Al-Aqsaa ta'e. Mi'iraaj imala olitti ol bahanii Rabbiin irraa ajaja argatan jedhamee beekama.
+
+Imala kana keessatti salaanni ummata Islaamaatiif ajajame. Salaanni jalqaba shantama ta'ee ajajame; achiis rahmata Rabbiitiin guyyaatti salaata shanitti hir'ifame, mindaan isaa shantama akka ta'utti.
+
+Barumsa: Salaanni Islaama keessatti iddoo guddaa qaba; Muslimni salaata isaa eeguu qaba.`
+  },
+  {
+    title: "Hijraa gara Madiinaa",
+    text:
+`Muslimoonni Makkaa keessatti rakkoo hedduu erga mudatanii booda, Rabbiin gara Madiinaa akka godaanan karaa bane.
+
+Nabiyyiin ﷺ Abu Bakr رضي الله عنه waliin godaanan. Yeroo imala isaanii keessa Holqa Thawr keessatti yeroo muraasa turan.
+
+Madiinaa ga'uun isaanii hawaasa Islaamaa haaraa ijaaruuf jalqaba guddaa ta'e. Muslimoonni Ansaar jedhaman Muslimoota Makkaa irraa godaanan, Muhaajiroota, simatanii gargaaran.
+
+Barumsa: Obbolummaan Islaamaa, wal-gargaaruun fi fedhii ofii aarsaa gochuun barbaachisaadha.`
+  },
+  {
+    title: "Hawaasa Madiinaa Ijaaruu",
+    text:
+`Madiinaa keessatti Nabiyyiin ﷺ Masjida Nabawii ijaaran. Masjiidni sun bakka salaataa qofa osoo hin taane, bakka barnootaa, marii fi hojii hawaasummaa ta'e.
+
+Nabiyyiin ﷺ Muhaajirootaa fi Ansaar gidduutti obbolummaa cimsan. Hawaasa keessatti waliigaltee fi seera waliin jiraachuu gargaaru hundeessan.
+
+Islaamni ibaadaa qofa osoo hin taane, haqaa, amanamummaa, maatii kunuunsuu fi mirga ollaa kabajuu barsiisa.
+
+Barumsa: Hawaasni gaariin iimaana, haqaa, beekumsa fi wal-gargaarsa irratti ijaarama.`
+  },
+  {
+    title: "Lola Badr, Uhud fi Khandaq",
+    text:
+`Badr keessatti Muslimoonni lakkoofsaan xiqqaa ta'anii loltoota Quraysh waliin wal argan. Rabbiin Muslimoota gargaaruun injifannoo argatan.
+
+Uhud keessatti Muslimoonni jalqaba jabaatanii turan; garuu ajaja Nabiyyii ﷺ irratti bakka isaanii eeguu dhabuun miidhaa fide. Nabiyyiin ﷺ miidhaman; sahaabonni hedduunis du'an.
+
+Khandaq keessatti Muslimoonni Madiinaa ittisuuf bo'oo qotan. Karoora kana keessatti Salman Al-Faarisii رضي الله عنه yaada bo'oo qotuu dhiyeessan.
+
+Barumsa: Ajaja hordofuun, obsi, qophii fi wal-tumsuun barbaachisaadha. Injifannoo fi qormaanni lamaan isaanii iyyuu barumsa qabu.`
+  },
+  {
+    title: "Waliigaltee Hudaybiyyah",
+    text:
+`Nabiyyiin ﷺ sahaabota waliin umraa raawwachuuf Makkaa qajeelan. Quraysh isaan Makkaa seenuu irraa dhowwe; achiis Hudaybiyyah keessatti waliigalteen taasifame.
+
+Waliigalteen kun yeroo tokko tokko Muslimootaaf ulfaataa fakkaatus, booda nageenyi uumamuun namoonni hedduun Islaama baratan.
+
+Nabiyyiin ﷺ murtii isaanii keessatti obsa, ogummaa fi bu'aa yeroo dheeraa ilaalan.
+
+Barumsa: Nageenyi, waliigalteen haqaa fi murtii ogummaa qabu yeroo baay'ee bu'aa guddaa fida.`
+  },
+  {
+    title: "Fath Makkaa",
+    text:
+`Waliigalteen Hudaybiyyah erga cabsamee booda, Nabiyyiin ﷺ Makkaa seenuuf qajeelan. Makkaan Muslimootaaf banamte; Nabiyyiin ﷺ injifannoo guddaa argatan.
+
+Nabiyyiin ﷺ yeroo aangoo qabatan, namoota isaan waggoota dheeraaf cunqursaa turan hedduuf dhiifama godhan.
+
+Sanamoonni Ka'baa keessaa haqaman; tawhiinni ifatti labsame.
+
+Barumsa: Yeroo injifannoo argatanis gad of qabuu, araara gochuu fi haqaan jiraachuun amala Nabiyyii ﷺ keessaa dha.`
+  },
+  {
+    title: "Waggaa Dhumaatii fi Hajjii Farewell",
+    text:
+`Bara dhuma jireenya isaanii keessatti Nabiyyiin ﷺ Hajjii raawwatanii sahaabota isaanii barsiisan. Hajjii kana Hajjii Farewell jedhanii waamu.
+
+Khuxbaa isaanii keessatti dhiiga, qabeenyaa fi kabaja namootaa eeguu, mirga dubartootaa kabajuu, amanamummaa fi obbolummaa Islaamaa cimsuu barsiisan.
+
+Muslimoonni Qur'aana fi Sunnah irratti cichanii akka jiraatan gorsan.
+
+Barumsa: Namootaaf haqaan jiraachuu, miidhaa irraa fagaachuu fi mirga namootaa eeguun dirqama guddaadha.`
+  },
+  {
+    title: "Dhukkuba Dhumaatii fi Du'a Nabiyyii ﷺ",
+    text:
+`Nabiyyiin ﷺ dhukkuba dhumaatii isaanii keessatti sahaabota isaanii waliin turan. Yeroo dhukkubsatanis salaata fi hojii amantii irratti xiyyeeffannoo kennan.
+
+Nabiyyiin ﷺ Madiinaa keessatti du'an. Umurii isaanii waggaa 63 ta'uu seenaa Islaamaa keessatti beekama.
+
+Duuti isaanii sahaabota irratti gadda guddaa fide. Abu Bakr رضي الله عنه Muslimoota yaadachiisan: Muhammad ﷺ ergamaa Rabbii ta'anii darbu; Rabbiin garuu jiraataa hin duune.
+
+Barumsa: Nabiyyiin ﷺ nama ta'anii du'an; Rabbii Tokkicha qofa gabbarna. Qur'aanaa fi Sunnah isaanii hordofna.`
+  },
+  {
+    title: "Amala Nabiyyii ﷺ fi Barumsa Jireenyaa",
+    text:
+`Nabiyyiin Muhammad ﷺ amala gaarii, amanamummaa, obsa, gara-laafina, gad of qabuu fi haqaan beekamu.
+
+Maatii isaanii waliin gara-laafinaan jiraatu; ijoollee jaallatu; hiyyeeyyii fi yatimoota gargaaru; ollaa kabaju; nama dadhabaa hin cunqursan.
+
+Isaan fakkeenya gaarii Muslimoota hundaaf ta'u. Rabbiin Qur'aana keessatti Nabiyyii ﷺ fakkeenya gaarii akka ta'an ibsa (Al-Ahzaab 33:21).
+
+Barumsa:
+1. Rabbii Tokkicha qofa waaqeffadhu.
+2. Salaata kee eegi.
+3. Dhugaa dubbadhu.
+4. Amanamaa ta'i.
+5. Maatii fi ollaa kee kabaji.
+6. Namootaaf araara qabaadhu.
+7. Qur'aanaa fi Sunnah baradhu.
+8. Amala gaarii irratti cichi.
+
+Hubachiisa: Barnoonni kun cuunfaa seenaa ti. Bal'inaan qorachuuf Qur'aana, hadiisa sirrii fi kitaabota seeraa Nabiyyii amanamoo ilaali.`
+  }
+];
+
+async function showSeerahMenu(jid) {
+  let message =
+    `📜 SEENAA NABII MUHAMMAD ﷺ\n` +
+    `🌿 HID AAYATUL-BAYAAN\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n`;
+
+  SEERAH.forEach((chapter, index) => {
+    message += `${index + 1}️⃣ ${chapter.title}\n`;
+  });
+
+  message +=
+    `\n━━━━━━━━━━━━━━━━━━\n` +
+    `Boqonnaa dubbisuu barbaaddu lakkoofsaan ergi.\n` +
+    `0️⃣ Gara menu guddaatti deebi'i.`;
+
+  sessions.set(jid, {
+    type: "seerah",
+    step: "choice"
+  });
+
+  await sendText(jid, message);
+}
+
+async function handleSeerahChoice(jid, text) {
+  const choice = Number(text.trim());
+
+  if (
+    !Number.isInteger(choice) ||
+    choice < 1 ||
+    choice > SEERAH.length
+  ) {
+    await sendText(
+      jid,
+      `Lakkoofsa 1 hanga ${SEERAH.length} keessaa tokko ergi.\n` +
+      `Menu guddaatti deebi'uuf 0 ergi.`
+    );
+    return;
+  }
+
+  const chapter = SEERAH[choice - 1];
+
+  await sendText(
+    jid,
+    `📜 SEENAA NABII MUHAMMAD ﷺ\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📖 Boqonnaa ${choice}: ${chapter.title}\n\n` +
+    `${chapter.text}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `Boqonnaa biraa dubbisuuf lakkoofsa isaa ergi.\n` +
+    `Seenaa keessaa ba'uuf 0 ergi.`
+  );
+}
 // ===============================
 // MAIN MESSAGE HANDLER
 // ===============================
